@@ -1,0 +1,15 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Dependencies and generated output
+node_modules/
+dist/
+build/
+.expo/
+
+# Logs and operating-system metadata
+*.log
+.DS_Store
+__MACOSX/
