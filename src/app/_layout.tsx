@@ -1,18 +1,41 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
+import { useEffect } from 'react';
+import { Slot, useRouter, useSegments } from 'expo-router';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useAuthStore } from '../store/authStore';
+import '../global.css';
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
+const queryClient = new QueryClient();
 
-SplashScreen.preventAutoHideAsync();
+export default function RootLayout() {
+  const { isAuthenticated, isLoading, restoreSession, role } = useAuthStore();
+  const segments = useSegments();
+  const router = useRouter();
 
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  useEffect(() => {
+    restoreSession();
+  }, [restoreSession]);
+
+  useEffect(() => {
+    if (isLoading) return;
+
+    const inAuthGroup = segments[0] === '(auth)';
+
+    if (!isAuthenticated && !inAuthGroup) {
+      router.replace('/(auth)/login');
+    } else if (isAuthenticated && inAuthGroup) {
+      if (role === 'driver') {
+        router.replace('/(driver)');
+      } else if (role === 'parent') {
+        router.replace('/(parent)');
+      }
+    }
+  }, [isAuthenticated, isLoading, segments, role, router]);
+
+  if (isLoading) return null; // Or a splash screen component
+
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      <AppTabs />
-    </ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <Slot />
+    </QueryClientProvider>
   );
 }
