@@ -1,11 +1,32 @@
 import { View, Text, ActivityIndicator } from 'react-native';
-import { Map, Camera, Marker, GeoJSONSource, Layer } from '@maplibre/maplibre-react-native';
 import { useParentProfile } from '../../hooks/parent/useParentProfile';
 import { useLiveBusLocation } from '../../hooks/parent/useLiveBusLocation';
 import { useSmoothLocation } from '../../hooks/parent/useSmoothLocation';
 import { useParentLocation } from '../../hooks/parent/useParentLocation';
 import { useTripStore } from '../../store/tripStore';
 import env from '../../env';
+
+// MapLibre is a native module - it crashes in Expo Go (MLRNCameraModule not found).
+// Lazy-require with fallback so the rest of the app (auth, profile) still works in Expo Go.
+// In a native dev build (`npx expo run:android`) this will load normally.
+let Map: any = null;
+let Camera: any = null;
+let Marker: any = null;
+let GeoJSONSource: any = null;
+let Layer: any = null;
+let isMapLibreAvailable = false;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const mapLibre = require('@maplibre/maplibre-react-native');
+  Map = mapLibre.Map;
+  Camera = mapLibre.Camera;
+  Marker = mapLibre.Marker;
+  GeoJSONSource = mapLibre.GeoJSONSource;
+  Layer = mapLibre.Layer;
+  isMapLibreAvailable = true;
+} catch {
+  isMapLibreAvailable = false;
+}
 
 export default function ParentDashboard() {
   const { data: profile, isLoading: isProfileLoading } = useParentProfile();
@@ -32,7 +53,7 @@ export default function ParentDashboard() {
       <View className="flex-1 justify-center items-center bg-gray-50 p-6">
         <Text className="text-xl font-bold text-gray-800 text-center">No Bus Assigned</Text>
         <Text className="text-gray-500 text-center mt-2">
-          {profile?.studentname} is not currently assigned to any bus route.
+          {profile?.student?.studentName || 'Student'} is not currently assigned to any bus route.
         </Text>
       </View>
     );
@@ -44,7 +65,14 @@ export default function ParentDashboard() {
     <View className="flex-1 bg-white">
       {/* Map Area */}
       <View className="flex-1 bg-slate-200">
-        {hasLocation ? (
+        {!isMapLibreAvailable ? (
+          <View className="flex-1 justify-center items-center p-6 bg-yellow-50">
+            <Text className="text-yellow-800 text-center font-bold">Map requires native build</Text>
+            <Text className="text-gray-600 text-center text-sm mt-2">
+              @maplibre/maplibre-react-native does not run in Expo Go.{'\n'}Run `npx expo run:android` to build a dev client with native code.{'\n'}Other features (login/profile) still work in Expo Go.
+            </Text>
+          </View>
+        ) : hasLocation ? (
           <Map
             style={{ flex: 1 }}
             mapStyle={env.MAPTILER_STYLE_URL}
@@ -126,7 +154,7 @@ export default function ParentDashboard() {
         </View>
 
         <Text className="text-gray-500 text-sm font-medium">Student</Text>
-        <Text className="text-gray-900 text-xl font-bold mb-4">{profile.studentName}</Text>
+        <Text className="text-gray-900 text-xl font-bold mb-4">{profile.student?.studentName}</Text>
         
         <View className="flex-row justify-between mb-2">
           <View>
