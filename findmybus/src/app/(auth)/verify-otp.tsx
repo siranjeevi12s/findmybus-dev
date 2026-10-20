@@ -3,11 +3,13 @@ import { View, Text, TextInput, TouchableOpacity, ActivityIndicator } from 'reac
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useVerifyOtp } from '../../hooks/auth/useVerifyOtp';
 import { useSendOtp } from '../../hooks/auth/useSendOtp';
+import { useQueryClient } from '@tanstack/react-query';
 
 export default function VerifyOtpScreen() {
   const { email } = useLocalSearchParams<{ email: string }>();
   const [otp, setOtp] = useState('');
   const router = useRouter();
+  const queryClient = useQueryClient();
   const verifyOtp = useVerifyOtp();
   const resendOtp = useSendOtp();
 
@@ -15,6 +17,7 @@ export default function VerifyOtpScreen() {
     if (!otp || otp.length !== 6 || !email) return;
     verifyOtp.mutate({ email, otp }, {
       onSuccess: (data) => {
+        queryClient.clear();
         if (data.role === 'driver') {
           router.replace('/(driver)');
         } else {
@@ -26,7 +29,7 @@ export default function VerifyOtpScreen() {
 
   const handleResend = () => {
     if (!email) return;
-    resendOtp.mutate(email);
+    resendOtp.mutate({ email });
   };
 
   return (

@@ -1,16 +1,17 @@
 import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSendOtp } from '../../hooks/auth/useSendOtp';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
+  const { role } = useLocalSearchParams<{ role?: string }>();
   const router = useRouter();
   const sendOtp = useSendOtp();
 
   const handleSendOtp = () => {
     if (!email) return;
-    sendOtp.mutate(email, {
+    sendOtp.mutate({ email, role }, {
       onSuccess: () => {
         router.push({ pathname: '/(auth)/verify-otp', params: { email } });
       },

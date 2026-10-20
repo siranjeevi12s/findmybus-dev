@@ -1,8 +1,10 @@
-import { View, Text, ActivityIndicator } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useParentProfile } from '../../hooks/parent/useParentProfile';
 import { useLiveBusLocation } from '../../hooks/parent/useLiveBusLocation';
 import { useSmoothLocation } from '../../hooks/parent/useSmoothLocation';
 import { useParentLocation } from '../../hooks/parent/useParentLocation';
+import { useReverseGeocode } from '../../hooks/useReverseGeocode';
 import { useTripStore } from '../../store/tripStore';
 import env from '../../env';
 
@@ -39,6 +41,27 @@ export default function ParentDashboard() {
   const isConnected = useTripStore((state) => state.isConnectedToSocket);
   
   const smoothBusLoc = useSmoothLocation(busLocation?.latitude, busLocation?.longitude);
+  const { data: busPlaceName } = useReverseGeocode(busLocation?.latitude, busLocation?.longitude);
+
+  // Map starts zoomed out, then flies in to the live bus location.
+  const [mapZoom, setMapZoom] = useState(4);
+  const [autoZoomDone, setAutoZoomDone] = useState(false);
+
+  useEffect(() => {
+    if (!busLocation?.active) {
+      // Trip ended — reset so the next trip starts zoomed out again.
+      setMapZoom(4);
+      setAutoZoomDone(false);
+      return;
+    }
+    if (smoothBusLoc && !autoZoomDone) {
+      const t = setTimeout(() => {
+        setMapZoom(14);
+        setAutoZoomDone(true);
+      }, 1000);
+      return () => clearTimeout(t);
+    }
+  }, [smoothBusLoc, busLocation?.active, autoZoomDone]);
 
   if (isProfileLoading) {
     return (
@@ -80,10 +103,10 @@ export default function ParentDashboard() {
             attribution={true}
           >
             <Camera
-              zoom={14}
+              zoom={mapZoom}
               center={[smoothBusLoc.lng, smoothBusLoc.lat]}
               easing="fly"
-              duration={1000}
+              duration={autoZoomDone ? 1000 : 2500}
             />
 
             {/* Parent Location Marker */}
@@ -92,8 +115,19 @@ export default function ParentDashboard() {
                 id="parentMarker"
                 lngLat={[parentLoc.longitude, parentLoc.latitude]}
               >
-                <View className="w-8 h-8 bg-green-500 rounded-full border-2 border-white justify-center items-center shadow-md">
-                  <Text className="text-white text-[10px] font-bold">ME</Text>
+                <View
+                  style={{
+                    width: 32,
+                    height: 32,
+                    backgroundColor: '#22C55E',
+                    borderRadius: 16,
+                    borderWidth: 2,
+                    borderColor: '#ffffff',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ color: '#ffffff', fontSize: 10, fontWeight: 'bold' }}>ME</Text>
                 </View>
               </Marker>
             )}
@@ -127,13 +161,31 @@ export default function ParentDashboard() {
               </GeoJSONSource>
             )}
 
-            {/* Smooth Bus Marker with Emoji */}
+            {/* Smooth Bus Marker with Emoji. Keep children static-sized:
+                the marker repositions every animation frame, so any text
+                inside it flickers. The locality label lives in the fixed
+                overlay chip below instead. */}
             <Marker
               id="busMarker"
               lngLat={[smoothBusLoc.lng, smoothBusLoc.lat]}
             >
-              <View className="w-12 h-12 bg-white rounded-full border-2 border-blue-500 justify-center items-center shadow-xl">
-                <Text className="text-2xl">🚌</Text>
+              <View
+                style={{
+                  width: 48,
+                  height: 48,
+                  backgroundColor: '#ffffff',
+                  borderRadius: 24,
+                  borderWidth: 2,
+                  borderColor: '#3B82F6',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  shadowColor: '#000',
+                  shadowOpacity: 0.25,
+                  shadowRadius: 4,
+                  elevation: 5,
+                }}
+              >
+                <Text style={{ fontSize: 24 }}>🚌</Text>
               </View>
             </Marker>
           </Map>
@@ -142,6 +194,42 @@ export default function ParentDashboard() {
             <Text className="text-gray-500 text-center text-lg">
               Bus is not currently on an active trip.
             </Text>
+          </View>
+        )}
+
+        {/* Locality chip — fixed top-center overlay. Rendered outside <Map>
+            so it never re-mounts with marker frames (no blinking), and only
+            changes text when the rounded locality actually changes. */}
+        {isMapLibreAvailable && !!hasLocation && !!busPlaceName && (
+          <View className="absolute left-0 right-0 top-3 items-center" pointerEvents="none">
+            <View className="bg-slate-900 rounded-full px-4 py-2 shadow-xl border border-slate-700 flex-row items-center">
+              <Text className="text-white font-bold text-sm">📍 {busPlaceName.split(',')[0]}</Text>
+            </View>
+          </View>
+        )}
+
+        {/* Zoom controls overlay (must sit outside <Map> — plain Views
+            inside the native map do not lay out reliably) */}
+        {isMapLibreAvailable && !!hasLocation && (
+          <View className="absolute right-3 top-3 flex-col gap-2">
+            <TouchableOpacity
+              className="w-10 h-10 bg-white rounded-full justify-center items-center shadow-lg border border-gray-200"
+              onPress={() => setMapZoom(14)}
+            >
+              <Text className="text-lg">◎</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="w-10 h-10 bg-white rounded-full justify-center items-center shadow-lg border border-gray-200"
+              onPress={() => setMapZoom((z) => Math.max(2, z - 2))}
+            >
+              <Text className="text-xl font-bold text-gray-700">−</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="w-10 h-10 bg-white rounded-full justify-center items-center shadow-lg border border-gray-200"
+              onPress={() => setMapZoom((z) => Math.min(18, z + 2))}
+            >
+              <Text className="text-xl font-bold text-gray-700">+</Text>
+            </TouchableOpacity>
           </View>
         )}
       </View>
@@ -154,14 +242,19 @@ export default function ParentDashboard() {
         </View>
 
         <Text className="text-gray-500 text-sm font-medium">Student</Text>
-        <Text className="text-gray-900 text-xl font-bold mb-4">{profile.student?.studentName}</Text>
+        <Text className="text-gray-900 text-xl font-bold mb-4">{profile.student?.studentName || 'Student'}</Text>
         
         <View className="flex-row justify-between mb-2">
-          <View>
+          <View className="flex-1 mr-2">
             <Text className="text-gray-500 text-xs">Bus Number</Text>
             <Text className="text-gray-900 font-bold text-lg">
               {typeof profile.bus !== 'string' ? profile.bus.busNumber : 'Unknown'}
             </Text>
+            {busPlaceName && (
+              <Text className="text-gray-500 text-xs mt-1" numberOfLines={2}>
+                📍 {busPlaceName}
+              </Text>
+            )}
           </View>
           
           {profile.driver && (
