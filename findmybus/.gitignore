@@ -45,3 +45,4 @@ example
 # packaged application artifacts
 *.apk
 *.apks
+*.zip
