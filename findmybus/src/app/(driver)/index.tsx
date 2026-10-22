@@ -54,6 +54,7 @@ export default function DriverDashboard() {
       return;
     }
 
+    if (startTrip.isPending) return;
     startTrip.mutate(undefined, {
       onError: (error) => {
         Alert.alert('Could Not Start Trip', error instanceof Error ? error.message : 'Please try again.');

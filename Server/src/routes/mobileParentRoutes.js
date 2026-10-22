@@ -19,5 +19,6 @@ router.get('/student', mobileParentController.getStudent);
 router.get('/bus', mobileParentController.getBus);
 router.get('/active-trip', mobileParentController.getActiveTrip);
 router.get('/bus-location', mobileParentController.getBusLocation);
+router.get('/bus-location-history', mobileParentController.getBusLocationHistory);
 
 module.exports = router;

@@ -79,10 +79,28 @@ const getBusLocation = async (req, res, next) => {
   }
 };
 
+const getBusLocationHistory = async (req, res, next) => {
+  try {
+    const { userId } = req.mobileUser;
+    const profile = await parentService.getParentProfile(userId);
+    const busId = profile.bus ? profile.bus._id : null;
+    const history = await parentService.getBusLocationHistory(busId);
+    return res.status(200).json({
+      success: true,
+      message: 'Bus location history fetched',
+      data: history,
+      error: null
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getProfile,
   getStudent,
   getBus,
   getActiveTrip,
   getBusLocation,
+  getBusLocationHistory,
 };

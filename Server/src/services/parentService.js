@@ -50,8 +50,26 @@ const getBusLocation = async (busId) => {
   };
 };
 
+const getBusLocationHistory = async (busId) => {
+  if (!busId) return [];
+  const trip = await Trip.findOne({ busId, status: 'active' });
+  if (!trip) return [];
+  const points = await TripLocation.find({ tripId: trip._id })
+    .sort({ timestamp: 1 })
+    .lean();
+  return points.map((p) => ({
+    latitude: p.latitude,
+    longitude: p.longitude,
+    accuracy: p.accuracy,
+    speed: p.speed,
+    heading: p.heading,
+    timestamp: p.timestamp,
+  }));
+};
+
 module.exports = {
   getParentProfile,
   getActiveTrip,
   getBusLocation,
+  getBusLocationHistory,
 };

@@ -1,5 +1,5 @@
 import axiosClient from './axiosClient';
-import type { ApiResponse, ParentProfile, Student, Bus, Trip, BusLocation } from '../types';
+import type { ApiResponse, ParentProfile, Student, Bus, Trip, BusLocation, BusLocationHistory } from '../types';
 
 export const parentApi = {
   getProfile: () =>
@@ -16,4 +16,7 @@ export const parentApi = {
 
   getBusLocation: () =>
     axiosClient.get<ApiResponse<BusLocation>>('/mobile/parent/bus-location'),
+
+  getBusLocationHistory: () =>
+    axiosClient.get<ApiResponse<BusLocationHistory[]>>('/mobile/parent/bus-location-history'),
 };

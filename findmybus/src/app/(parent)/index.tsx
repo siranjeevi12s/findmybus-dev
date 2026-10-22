@@ -38,6 +38,7 @@ export default function ParentDashboard() {
   useLiveBusLocation(busId);
   
   const busLocation = useTripStore((state) => state.busLocation);
+  const busPath = useTripStore((state) => state.busPath);
   const isConnected = useTripStore((state) => state.isConnectedToSocket);
   
   const smoothBusLoc = useSmoothLocation(busLocation?.latitude, busLocation?.longitude);
@@ -132,8 +133,8 @@ export default function ParentDashboard() {
               </Marker>
             )}
 
-            {/* Path between Parent and Bus */}
-            {parentLoc && (
+            {/* Bus route breadcrumb trail — drawn from trip start to current position */}
+            {busPath.length >= 2 && (
               <GeoJSONSource
                 id="routeSource"
                 data={{
@@ -141,11 +142,8 @@ export default function ParentDashboard() {
                   properties: {},
                   geometry: {
                     type: 'LineString',
-                    coordinates: [
-                      [parentLoc.longitude, parentLoc.latitude],
-                      [smoothBusLoc.lng, smoothBusLoc.lat]
-                    ]
-                  }
+                    coordinates: busPath.map((p) => [p.longitude, p.latitude]),
+                  },
                 }}
               >
                 <Layer
@@ -154,8 +152,8 @@ export default function ParentDashboard() {
                   style={{
                     lineColor: '#3B82F6',
                     lineWidth: 4,
-                    lineDasharray: [2, 2],
-                    lineOpacity: 0.7
+                    lineDasharray: [4, 2],
+                    lineOpacity: 0.8,
                   }}
                 />
               </GeoJSONSource>
