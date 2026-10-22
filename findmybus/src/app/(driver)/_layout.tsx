@@ -14,6 +14,7 @@ export default function DriverLayout() {
   return (
     <Stack
       screenOptions={{
+        headerShown: false,
         headerStyle: { backgroundColor: '#0F172A' },
         headerTintColor: '#fff',
         headerTitleStyle: { fontWeight: 'bold' },
