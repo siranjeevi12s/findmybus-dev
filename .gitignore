@@ -13,3 +13,7 @@ build/
 *.log
 .DS_Store
 __MACOSX/
+zip/
+assets/
+assets.zip
+app/build/
