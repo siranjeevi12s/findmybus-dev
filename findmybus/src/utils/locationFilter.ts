@@ -1,7 +1,7 @@
 import { haversineDistance } from './distance';
 
-const MAX_ACCURACY_METRES = 100;
-const MIN_DISTANCE_KM = 0.01; // 10 metres
+const MAX_ACCURACY_METRES = 75;
+const MIN_DISTANCE_KM = 0.05; // 50 metres between parent updates
 const MAX_JUMP_KM = 0.5;      // 500 metres — if larger, snap instead of animate
 
 export function isAccurateLocation(accuracy?: number): boolean {

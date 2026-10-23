@@ -11,6 +11,12 @@ export function formatDuration(startedAt: string): string {
   ].join(':');
 }
 
+export function formatDistance(km: number): string {
+  if (km < 0.001) return '0 m';
+  if (km < 1) return `${Math.round(km * 1000)} m`;
+  return `${km.toFixed(1)} km`;
+}
+
 export function formatCompletedDuration(startedAt: string, endedAt: string): string {
   const ms = new Date(endedAt).getTime() - new Date(startedAt).getTime();
   const totalSeconds = Math.floor(ms / 1000);

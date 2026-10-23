@@ -1,11 +1,12 @@
 import { View, Text, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDriverProfile } from '../../hooks/driver/useDriverProfile';
 import { useDriverAssignment } from '../../hooks/driver/useDriverAssignment';
 import { useCurrentTrip } from '../../hooks/driver/useCurrentTrip';
 import { useStartTrip } from '../../hooks/driver/useStartTrip';
 import { useStopTrip } from '../../hooks/driver/useStopTrip';
 import { useLocationTracking } from '../../hooks/trip/useLocationTracking';
-import { formatDuration } from '../../utils/formatters';
+import { formatDuration, formatDistance } from '../../utils/formatters';
 import { useEffect, useState } from 'react';
 
 export default function DriverDashboard() {
@@ -15,7 +16,7 @@ export default function DriverDashboard() {
   
   const startTrip = useStartTrip();
   const stopTrip = useStopTrip();
-  const { ensurePermissions, isActive } = useLocationTracking();
+  const { ensurePermissions, isActive, currentSpeedKmh, distanceCoveredKm } = useLocationTracking();
   
   const [duration, setDuration] = useState('00:00:00');
 
@@ -32,9 +33,9 @@ export default function DriverDashboard() {
 
   if (isProfileLoading || isAssignmentLoading || isTripLoading) {
     return (
-      <View className="flex-1 bg-driver-bg justify-center items-center">
+      <SafeAreaView edges={['top', 'bottom']} className="flex-1 bg-driver-bg justify-center items-center">
         <ActivityIndicator size="large" color="#3B82F6" />
-      </View>
+      </SafeAreaView>
     );
   }
 
@@ -71,7 +72,7 @@ export default function DriverDashboard() {
   };
 
   return (
-    <View className="flex-1 bg-driver-bg p-4">
+    <SafeAreaView edges={['top', 'bottom']} className="flex-1 bg-driver-bg p-4">
       {/* Profile Card */}
       <View className="bg-driver-card p-4 rounded-xl mb-4 border border-slate-700">
         <Text className="text-gray-400 text-sm">Welcome back,</Text>
@@ -101,7 +102,19 @@ export default function DriverDashboard() {
         </Text>
         
         {isActive && (
-          <Text className="text-white text-4xl font-mono mb-8 font-bold">{duration}</Text>
+          <View className="flex-col items-center gap-4">
+            <Text className="text-white text-4xl font-mono mb-2 font-bold">{duration}</Text>
+            <View className="flex-row gap-4 text-gray-300 text-sm">
+              <View className="flex-col items-center">
+                <Text className="text-gray-400 text-xs uppercase">Speed</Text>
+                <Text className="text-white font-bold">{Math.round(currentSpeedKmh)} km/h</Text>
+              </View>
+              <View className="flex-col items-center">
+                <Text className="text-gray-400 text-xs uppercase">Distance</Text>
+                <Text className="text-white font-bold">{formatDistance(distanceCoveredKm)}</Text>
+              </View>
+            </View>
+          </View>
         )}
 
         <TouchableOpacity
@@ -118,6 +131,6 @@ export default function DriverDashboard() {
           )}
         </TouchableOpacity>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }

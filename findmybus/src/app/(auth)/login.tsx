@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSendOtp } from '../../hooks/auth/useSendOtp';
 
@@ -19,7 +20,7 @@ export default function LoginScreen() {
   };
 
   return (
-    <View className="flex-1 justify-center px-6 bg-white">
+    <SafeAreaView edges={['top', 'bottom']} className="flex-1 justify-center px-6 bg-white">
       <Text className="text-3xl font-bold text-gray-900 mb-2">FindMyBus</Text>
       <Text className="text-gray-500 mb-8">Enter your registered email address to login.</Text>
 
@@ -51,6 +52,6 @@ export default function LoginScreen() {
       {sendOtp.isError && (
         <Text className="text-red-500 text-center mt-4 text-sm">{sendOtp.error.message}</Text>
       )}
-    </View>
+    </SafeAreaView>
   );
 }

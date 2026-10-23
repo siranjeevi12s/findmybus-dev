@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useVerifyOtp } from '../../hooks/auth/useVerifyOtp';
 import { useSendOtp } from '../../hooks/auth/useSendOtp';
@@ -33,7 +34,7 @@ export default function VerifyOtpScreen() {
   };
 
   return (
-    <View className="flex-1 justify-center px-6 bg-white">
+    <SafeAreaView edges={['top', 'bottom']} className="flex-1 justify-center px-6 bg-white">
       <Text className="text-3xl font-bold text-gray-900 mb-2">Check your email</Text>
       <Text className="text-gray-500 mb-8">
         We sent a 6-digit verification code to <Text className="font-semibold text-gray-900">{email}</Text>
@@ -74,6 +75,6 @@ export default function VerifyOtpScreen() {
           {verifyOtp.error?.message || resendOtp.error?.message}
         </Text>
       )}
-    </View>
+    </SafeAreaView>
   );
 }

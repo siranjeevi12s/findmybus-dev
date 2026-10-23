@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { parentApi } from '../../api/parentApi';
 import { useTripStore } from '../../store/tripStore';
 import { useAuthStore } from '../../store/authStore';
-import { connectSocket, joinBusRoom, getSocket } from '../../services/socketService';
+import { connectSocket, joinBusRoom, leaveBusRoom, getSocket, setActiveBusId } from '../../services/socketService';
 import type { BusLocation, BusLocationHistory } from '../../types';
 
 const MIN_DISTANCE_METERS = 5;
@@ -28,7 +28,8 @@ export function useLiveBusLocation(busId?: string) {
   const clearBusPath = useTripStore((state) => state.clearBusPath);
   const setSocketConnected = useTripStore((state) => state.setSocketConnected);
 
-  // Initial fetch — current location + history breadcrumb trail
+  // Initial fetch — current location only. Do NOT seed breadcrumb path
+  // from history; the line should only appear once the driver starts the trip.
   const query = useQuery({
     queryKey: ['busLocation', busId],
     queryFn: async () => {
@@ -37,12 +38,9 @@ export function useLiveBusLocation(busId?: string) {
       const loc = locRes.data.data;
       setBusLocation(loc);
 
-      const histRes = await parentApi.getBusLocationHistory();
-      if (!histRes.data.success) throw new Error(histRes.data.message);
-      const history = histRes.data.data as BusLocationHistory[];
-      if (history.length > 0) {
-        setBusPath(history);
-      }
+      // Start with an empty path — lines appear only after trip starts.
+      setBusPath([]);
+      queryClient.setQueryData(['busPath', busId], []);
 
       return loc;
     },
@@ -53,6 +51,8 @@ export function useLiveBusLocation(busId?: string) {
   // Socket setup
   useEffect(() => {
     if (!busId || !accessToken) return;
+
+    setActiveBusId(busId);
 
     const socket = connectSocket(accessToken);
 
@@ -147,7 +147,9 @@ export function useLiveBusLocation(busId?: string) {
       setBusLocation(inactive);
       queryClient.setQueryData(['busLocation', busId], inactive);
       queryClient.invalidateQueries({ queryKey: ['activeTrip'] });
+      // Clear breadcrumb path when trip ends — lines only appear during an active trip.
       clearBusPath();
+      queryClient.setQueryData(['busPath', busId], []);
     });
 
     // connectSocket() reuses an already-connected socket, in which case the
@@ -166,6 +168,7 @@ export function useLiveBusLocation(busId?: string) {
         s.off('trip:started');
         s.off('trip:ended');
       }
+      leaveBusRoom();
     };
   }, [busId, accessToken, queryClient, setBusLocation, setBusPath, addBusPathPoint, clearBusPath, setSocketConnected]);
 

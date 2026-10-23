@@ -3,9 +3,18 @@ import * as SecureStore from 'expo-secure-store';
 import env from '../env';
 
 let socket: Socket | null = null;
+let activeBusId: string | null = null;
 
 export function getSocket(): Socket | null {
   return socket;
+}
+
+export function getActiveBusId(): string | null {
+  return activeBusId;
+}
+
+export function setActiveBusId(busId: string | null): void {
+  activeBusId = busId;
 }
 
 export function connectSocket(accessToken: string): Socket {
@@ -29,7 +38,7 @@ export function connectSocket(accessToken: string): Socket {
 
   socket = io(env.SOCKET_URL, {
     auth: { token: accessToken },
-    transports: ['websocket'],
+    transports: ['websocket', 'polling'],
     reconnection: true,
     reconnectionAttempts: 10,
     reconnectionDelay: 2000,
@@ -37,6 +46,10 @@ export function connectSocket(accessToken: string): Socket {
 
   socket.on('connect', () => {
     console.log('[Socket] Connected:', socket?.id);
+    // Re-join the active bus room after (re)connect so location updates resume.
+    if (activeBusId && socket) {
+      socket.emit('join-bus', activeBusId);
+    }
   });
 
   socket.on('disconnect', (reason) => {
@@ -91,5 +104,11 @@ export function disconnectSocket(): void {
 }
 
 export function joinBusRoom(busId: string): void {
+  activeBusId = busId;
   socket?.emit('join-bus', busId);
+}
+
+export function leaveBusRoom(): void {
+  activeBusId = null;
+  socket?.emit('leave-bus', '');
 }

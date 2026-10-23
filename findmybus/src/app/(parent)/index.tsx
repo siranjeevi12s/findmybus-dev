@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { Linking, View, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Location from 'expo-location';
 import { useParentProfile } from '../../hooks/parent/useParentProfile';
 import { useLiveBusLocation } from '../../hooks/parent/useLiveBusLocation';
 import { useSmoothLocation } from '../../hooks/parent/useSmoothLocation';
 import { useParentLocation } from '../../hooks/parent/useParentLocation';
 import { useReverseGeocode } from '../../hooks/useReverseGeocode';
 import { useTripStore } from '../../store/tripStore';
+import { estimateETA, formatETA } from '../../utils/eta';
 import env from '../../env';
 
 // MapLibre is a native module - it crashes in Expo Go (MLRNCameraModule not found).
@@ -32,7 +35,7 @@ try {
 
 export default function ParentDashboard() {
   const { data: profile, isLoading: isProfileLoading } = useParentProfile();
-  const parentLoc = useParentLocation();
+  const { location: parentLoc, permissionStatus } = useParentLocation();
   
   const busId = profile?.bus ? (typeof profile.bus === 'string' ? profile.bus : profile.bus._id) : undefined;
   useLiveBusLocation(busId);
@@ -40,9 +43,20 @@ export default function ParentDashboard() {
   const busLocation = useTripStore((state) => state.busLocation);
   const busPath = useTripStore((state) => state.busPath);
   const isConnected = useTripStore((state) => state.isConnectedToSocket);
-  
+  const hasNetworkError = useTripStore((state) => state.hasNetworkError);
+
   const smoothBusLoc = useSmoothLocation(busLocation?.latitude, busLocation?.longitude);
   const { data: busPlaceName } = useReverseGeocode(busLocation?.latitude, busLocation?.longitude);
+
+  // ETA: compute from parent location to bus location
+  const parentLat = parentLoc?.latitude;
+  const parentLng = parentLoc?.longitude;
+  const busLat = smoothBusLoc?.lat ?? busLocation?.latitude;
+  const busLng = smoothBusLoc?.lng ?? busLocation?.longitude;
+  const etaMinutes =
+    parentLat != null && parentLng != null && busLat != null && busLng != null
+      ? estimateETA(busLat, busLng, parentLat, parentLng)
+      : null;
 
   // Map starts zoomed out, then flies in to the live bus location.
   const [mapZoom, setMapZoom] = useState(4);
@@ -66,29 +80,60 @@ export default function ParentDashboard() {
 
   if (isProfileLoading) {
     return (
-      <View className="flex-1 justify-center items-center bg-gray-50">
+      <SafeAreaView edges={['top', 'bottom']} className="flex-1 justify-center items-center bg-gray-50">
         <ActivityIndicator size="large" color="#3B82F6" />
-      </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (permissionStatus === 'denied') {
+    return (
+      <SafeAreaView edges={['top', 'bottom']} className="flex-1 justify-center items-center bg-gray-50 p-6">
+        <Text className="text-xl font-bold text-gray-800 text-center">Location Permission Required</Text>
+        <Text className="text-gray-500 text-center mt-4">
+          Enable location access in Settings to see your position on the map.
+        </Text>
+        <TouchableOpacity
+          className="mt-6 h-12 px-6 bg-blue-600 rounded-lg flex-row items-center justify-center"
+          onPress={() => Linking.openSettings()}
+        >
+          <Text className="text-white font-semibold">Open Settings</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
     );
   }
 
   if (!profile?.bus) {
     return (
-      <View className="flex-1 justify-center items-center bg-gray-50 p-6">
+      <SafeAreaView edges={['top', 'bottom']} className="flex-1 justify-center items-center bg-gray-50 p-6">
         <Text className="text-xl font-bold text-gray-800 text-center">No Bus Assigned</Text>
         <Text className="text-gray-500 text-center mt-2">
           {profile?.student?.studentName || 'Student'} is not currently assigned to any bus route.
         </Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
   const hasLocation = busLocation?.active && smoothBusLoc;
+  const busSpeedKmh =
+    busLocation?.speed != null && Number.isFinite(busLocation.speed)
+      ? Math.max(0, Math.round(busLocation.speed * 3.6))
+      : 0;
 
   return (
-    <View className="flex-1 bg-white">
+    <SafeAreaView edges={['top', 'bottom']} className="flex-1 bg-white">
+      {/* Network status banner */}
+      {!isConnected && (
+        <View className="w-full bg-amber-100 border border-amber-300 p-3 px-4 flex-row items-center justify-between">
+          <Text className="text-amber-800 text-sm font-medium">
+            {hasNetworkError ? 'No internet connection' : 'Connecting to bus…'}
+          </Text>
+          {!isConnected && <Text className="text-amber-600 text-xs">{hasNetworkError ? 'Check your connection' : 'Live updates may be delayed'}</Text>}
+        </View>
+      )}
+
       {/* Map Area */}
-      <View className="flex-1 bg-slate-200">
+      <View className="flex-1 bg-slate-200" style={{ position: 'relative' }}>
         {!isMapLibreAvailable ? (
           <View className="flex-1 justify-center items-center p-6 bg-yellow-50">
             <Text className="text-yellow-800 text-center font-bold">Map requires native build</Text>
@@ -97,96 +142,98 @@ export default function ParentDashboard() {
             </Text>
           </View>
         ) : hasLocation ? (
-          <Map
-            style={{ flex: 1 }}
-            mapStyle={env.MAPTILER_STYLE_URL}
-            logo={false}
-            attribution={true}
-          >
-            <Camera
-              zoom={mapZoom}
-              center={[smoothBusLoc.lng, smoothBusLoc.lat]}
-              easing="fly"
-              duration={autoZoomDone ? 1000 : 2500}
-            />
+          <>
+            <Map
+              style={{ flex: 1 }}
+              mapStyle={env.MAPTILER_STYLE_URL}
+              logo={false}
+              attribution={true}
+            >
+              <Camera
+                zoom={mapZoom}
+                center={[smoothBusLoc.lng, smoothBusLoc.lat]}
+                easing="fly"
+                duration={autoZoomDone ? 1000 : 2500}
+              />
 
-            {/* Parent Location Marker */}
-            {parentLoc && (
+              {/* Parent Location Marker */}
+              {parentLoc && (
+                <Marker
+                  id="parentMarker"
+                  lngLat={[parentLoc.longitude, parentLoc.latitude]}
+                >
+                  <View
+                    style={{
+                      width: 32,
+                      height: 32,
+                      backgroundColor: '#22C55E',
+                      borderRadius: 16,
+                      borderWidth: 2,
+                      borderColor: '#ffffff',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Text style={{ color: '#ffffff', fontSize: 10, fontWeight: 'bold' }}>ME</Text>
+                  </View>
+                </Marker>
+              )}
+
+              {/* Bus route breadcrumb trail — drawn from trip start to current position */}
+              {busPath.length >= 2 && (
+                <GeoJSONSource
+                  id="routeSource"
+                  data={{
+                    type: 'Feature',
+                    properties: {},
+                    geometry: {
+                      type: 'LineString',
+                      coordinates: busPath.map((p) => [p.longitude, p.latitude]),
+                    },
+                  }}
+                >
+                  <Layer
+                    id="routeLayer"
+                    type="line"
+                    style={{
+                      lineColor: '#3B82F6',
+                      lineWidth: 4,
+                      lineDasharray: [4, 2],
+                      lineOpacity: 0.8,
+                    }}
+                  />
+                </GeoJSONSource>
+              )}
+
+              {/* Smooth Bus Marker with Emoji. Keep children static-sized:
+                  the marker repositions every animation frame, so any text
+                  inside it flickers. The locality label lives in the fixed
+                  overlay chip below instead. */}
               <Marker
-                id="parentMarker"
-                lngLat={[parentLoc.longitude, parentLoc.latitude]}
+                id="busMarker"
+                lngLat={[smoothBusLoc.lng, smoothBusLoc.lat]}
               >
                 <View
                   style={{
-                    width: 32,
-                    height: 32,
-                    backgroundColor: '#22C55E',
-                    borderRadius: 16,
+                    width: 48,
+                    height: 48,
+                    backgroundColor: '#ffffff',
+                    borderRadius: 24,
                     borderWidth: 2,
-                    borderColor: '#ffffff',
+                    borderColor: '#3B82F6',
                     justifyContent: 'center',
                     alignItems: 'center',
+                    shadowColor: '#000',
+                    shadowOpacity: 0.25,
+                    shadowRadius: 4,
+                    elevation: 5,
                   }}
                 >
-                  <Text style={{ color: '#ffffff', fontSize: 10, fontWeight: 'bold' }}>ME</Text>
+                  <Text style={{ fontSize: 24 }}>🚌</Text>
                 </View>
               </Marker>
-            )}
-
-            {/* Bus route breadcrumb trail — drawn from trip start to current position */}
-            {busPath.length >= 2 && (
-              <GeoJSONSource
-                id="routeSource"
-                data={{
-                  type: 'Feature',
-                  properties: {},
-                  geometry: {
-                    type: 'LineString',
-                    coordinates: busPath.map((p) => [p.longitude, p.latitude]),
-                  },
-                }}
-              >
-                <Layer
-                  id="routeLayer"
-                  type="line"
-                  style={{
-                    lineColor: '#3B82F6',
-                    lineWidth: 4,
-                    lineDasharray: [4, 2],
-                    lineOpacity: 0.8,
-                  }}
-                />
-              </GeoJSONSource>
-            )}
-
-            {/* Smooth Bus Marker with Emoji. Keep children static-sized:
-                the marker repositions every animation frame, so any text
-                inside it flickers. The locality label lives in the fixed
-                overlay chip below instead. */}
-            <Marker
-              id="busMarker"
-              lngLat={[smoothBusLoc.lng, smoothBusLoc.lat]}
-            >
-              <View
-                style={{
-                  width: 48,
-                  height: 48,
-                  backgroundColor: '#ffffff',
-                  borderRadius: 24,
-                  borderWidth: 2,
-                  borderColor: '#3B82F6',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  shadowColor: '#000',
-                  shadowOpacity: 0.25,
-                  shadowRadius: 4,
-                  elevation: 5,
-                }}
-              >
-                <Text style={{ fontSize: 24 }}>🚌</Text>
-              </View>
-            </Marker>
-          </Map>
+            </Map>
+          </>
         ) : (
           <View className="flex-1 justify-center items-center p-6">
             <Text className="text-gray-500 text-center text-lg">
@@ -230,6 +277,18 @@ export default function ParentDashboard() {
             </TouchableOpacity>
           </View>
         )}
+
+        {isMapLibreAvailable && !!hasLocation && (
+          <View className="absolute bottom-4 left-4 right-4 items-center" pointerEvents="none">
+            <View className="flex-row items-center rounded-2xl border border-slate-700 bg-slate-950/90 px-5 py-3 shadow-xl">
+              <Text className="mr-2 text-xs font-semibold uppercase tracking-widest text-slate-400">
+                Bus speed
+              </Text>
+              <Text className="text-2xl font-bold text-white">{busSpeedKmh}</Text>
+              <Text className="ml-1 text-sm font-semibold text-slate-300">km/h</Text>
+            </View>
+          </View>
+        )}
       </View>
 
       {/* Info Panel Bottom */}
@@ -253,6 +312,13 @@ export default function ParentDashboard() {
                 📍 {busPlaceName}
               </Text>
             )}
+            {etaMinutes != null && busLocation?.active && (
+              <View className="mt-1">
+                <Text className="text-blue-600 text-xs font-semibold">
+                  🚌 {formatETA(etaMinutes)} away
+                </Text>
+              </View>
+            )}
           </View>
           
           {profile.driver && (
@@ -265,6 +331,6 @@ export default function ParentDashboard() {
           )}
         </View>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
