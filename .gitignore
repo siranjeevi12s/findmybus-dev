@@ -13,3 +13,15 @@ build/
 *.log
 .DS_Store
 __MACOSX/
+zip/
+assets/
+assets.zip
+app/build/
+app/.cxx/
+apks/
+android/app/build/
+docs/
+_MacOSX/
+
+FindMyBus-apk*
+

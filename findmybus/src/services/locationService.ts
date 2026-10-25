@@ -105,9 +105,9 @@ export async function startLocationTracking(tripId: string): Promise<void> {
   if (isRunning) return;
 
   await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
-    accuracy: Location.Accuracy.High,
-    distanceInterval: 50,        // metres
-    timeInterval: 30000,          // 30 seconds
+    accuracy: Location.Accuracy.BestForNavigation,
+    distanceInterval: 10,         // metres
+    timeInterval: 5000,            // 5 seconds
     showsBackgroundLocationIndicator: true,
     foregroundService: {
       notificationTitle: 'FindMyBus — Tracking Active',

@@ -76,6 +76,15 @@ axiosClient.interceptors.response.use(
         });
         const newAccessToken = res.data.data.accessToken;
         await setAccessToken(newAccessToken);
+        // Keep Zustand in sync - otherwise socketService.ts:30 keeps using stale 15m token until restart
+        try {
+          const { useAuthStore } = await import('../store/authStore');
+          useAuthStore.setState({ accessToken: newAccessToken });
+          // Also update any live socket auth
+          const { getSocket } = await import('../services/socketService');
+          const s = getSocket();
+          if (s) s.auth = { token: newAccessToken };
+        } catch {}
         original.headers.Authorization = `Bearer ${newAccessToken}`;
         processQueue(null, newAccessToken);
         isRefreshing = false;

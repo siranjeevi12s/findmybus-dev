@@ -14,23 +14,28 @@ export function useStartTrip() {
       const { data } = await driverApi.startTrip();
       if (!data.success) throw new Error(data.message);
       const trip = data.data;
-
-      // Start background tracking as part of starting the trip, so that a
-      // tracking failure (e.g. background location permission missing) reaches
-      // the mutation's error path instead of being swallowed inside onSuccess.
-      await startLocationTracking(trip._id);
+      // Do not await native tracking inside mutation — fire-and-forget so
+      // button responds immediately to API result. Failures are handled below.
+      void startLocationTracking(trip._id);
       return trip;
+    },
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['currentTrip'] });
+      const snapshot = queryClient.getQueryData(['currentTrip']);
+      // Optimistically mark active before server round-trip.
+      setTrackingStatus('active');
+      return { snapshot };
     },
     onSuccess: (trip) => {
       setCurrentTrip(trip);
       setTrackingStatus('active');
       queryClient.setQueryData(['currentTrip'], trip);
+      queryClient.invalidateQueries({ queryKey: ['currentTrip'] });
     },
-    onError: async (error) => {
+    onError: async (error, _trip, context) => {
       setTrackingStatus('error');
-      // Tracking may have partially started — make sure nothing is left running.
+      queryClient.setQueryData(['currentTrip'], context?.snapshot);
       await stopLocationTracking().catch(() => {});
-      // The server may still hold an active trip; refetching reconciles the UI.
       queryClient.invalidateQueries({ queryKey: ['currentTrip'] });
       console.error('Failed to start trip:', error);
     },
