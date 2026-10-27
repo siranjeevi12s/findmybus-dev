@@ -1,6 +1,7 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import env from '../env';
+import { refreshMobileAccessToken } from '../services/mobileTokenRefresh';
 
 const SECURE_KEYS = {
   ACCESS_TOKEN: 'findmybus_access_token',
@@ -64,17 +65,19 @@ axiosClient.interceptors.response.use(
 
       const refreshToken = await getRefreshToken();
       if (!refreshToken) {
+        processQueue(error as Error, null);
         isRefreshing = false;
         await clearTokens();
+        try {
+          const { useAuthStore } = await import('../store/authStore');
+          await useAuthStore.getState().logout();
+        } catch {}
         // Event should be emitted to auth store if needed
         return Promise.reject(error);
       }
 
       try {
-        const res = await axios.post(`${env.API_BASE_URL}/mobile/auth/refresh-token`, {
-          token: refreshToken,
-        });
-        const newAccessToken = res.data.data.accessToken;
+        const newAccessToken = await refreshMobileAccessToken();
         await setAccessToken(newAccessToken);
         // Keep Zustand in sync - otherwise socketService.ts:30 keeps using stale 15m token until restart
         try {
@@ -93,6 +96,10 @@ axiosClient.interceptors.response.use(
         processQueue(refreshError as Error, null);
         isRefreshing = false;
         await clearTokens();
+        try {
+          const { useAuthStore } = await import('../store/authStore');
+          await useAuthStore.getState().logout();
+        } catch {}
         return Promise.reject(refreshError);
       }
     }

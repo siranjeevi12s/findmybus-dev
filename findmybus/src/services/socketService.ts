@@ -1,6 +1,7 @@
 import { io, Socket } from 'socket.io-client';
-import * as SecureStore from 'expo-secure-store';
 import env from '../env';
+import { clearTokens } from '../api/axiosClient';
+import { refreshMobileAccessToken } from './mobileTokenRefresh';
 
 let socket: Socket | null = null;
 let activeBusId: string | null = null;
@@ -65,20 +66,7 @@ export function connectSocket(accessToken: string): Socket {
     if (!isAuthError || !socket) return;
 
     try {
-      const refreshToken = await SecureStore.getItemAsync('findmybus_refresh_token');
-      if (!refreshToken) return;
-
-      // Use fetch/axios without interceptors to avoid loop - call refresh endpoint directly
-      const res = await fetch(`${env.API_BASE_URL}/mobile/auth/refresh-token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: refreshToken }),
-      });
-      const json = await res.json();
-      if (!json.success || !json.data?.accessToken) throw new Error(json.message || 'Refresh failed');
-
-      const newAccessToken: string = json.data.accessToken;
-      await SecureStore.setItemAsync('findmybus_access_token', newAccessToken);
+      const newAccessToken = await refreshMobileAccessToken();
       // Dynamic import to avoid circular dependency with zustand
       const { useAuthStore } = await import('../store/authStore');
       useAuthStore.setState({ accessToken: newAccessToken });
@@ -88,8 +76,10 @@ export function connectSocket(accessToken: string): Socket {
       console.log('[Socket] Retrying with refreshed token');
     } catch (refreshErr) {
       console.warn('[Socket] Token refresh failed, need re-login', refreshErr);
-      // Optional: clear socket so UI can prompt login
-      // disconnectSocket();
+      await clearTokens();
+      const { useAuthStore } = await import('../store/authStore');
+      await useAuthStore.getState().logout();
+      disconnectSocket();
     }
   });
 

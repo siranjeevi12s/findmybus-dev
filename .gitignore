@@ -14,7 +14,7 @@ build/
 .DS_Store
 __MACOSX/
 zip/
-assets/
+# assets/
 assets.zip
 app/build/
 app/.cxx/
