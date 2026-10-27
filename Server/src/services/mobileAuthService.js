@@ -179,21 +179,34 @@ const resendOtp = async (email) => {
 
 const refreshMobileToken = async (token) => {
   if (!token) {
-      const err = new Error('Refresh token is required');
-      err.statusCode = 400;
-      throw err;
+    const err = new Error('Refresh token is invalid or expired. Please log in again.');
+    err.statusCode = 401;
+    err.code = 'INVALID_REFRESH_TOKEN';
+    throw err;
   }
   const decoded = verifyMobileRefreshToken(token);
   if (!decoded) {
-    const err = new Error('Invalid or expired refresh token');
+    const err = new Error('Refresh token is invalid or expired. Please log in again.');
     err.statusCode = 401;
+    err.code = 'INVALID_REFRESH_TOKEN';
     throw err;
   }
 
-  const session = await MobileSession.findOne({ token });
+  const session = await MobileSession.findOne({
+    token,
+    expiresAt: { $gt: new Date() },
+  });
   if (!session) {
-    const err = new Error('Session expired or logged out');
+    const err = new Error('Refresh token is invalid or expired. Please log in again.');
     err.statusCode = 401;
+    err.code = 'INVALID_REFRESH_TOKEN';
+    throw err;
+  }
+
+  if (session.userId.toString() !== decoded.userId || session.role !== decoded.role) {
+    const err = new Error('Refresh token is invalid or expired. Please log in again.');
+    err.statusCode = 401;
+    err.code = 'INVALID_REFRESH_TOKEN';
     throw err;
   }
 

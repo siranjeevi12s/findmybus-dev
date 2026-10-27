@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 
-const REMOTE_ORIGIN = 'https://app-find-my-bus-gchga4hcdce2evdw.eastasia-01.azurewebsites.net';
-
+// const REMOTE_ORIGIN = 'https://app-find-my-bus-gchga4hcdce2evdw.eastasia-01.azurewebsites.net';
+const REMOTE_ORIGIN = 'http://10.106.220.145:5001';
 const ENV = {
   development: {
     API_BASE_URL: `${REMOTE_ORIGIN}/api`,
