@@ -24,9 +24,16 @@
         "ACCESS_BACKGROUND_LOCATION",
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_LOCATION",
-        "RECEIVE_BOOT_COMPLETED"
+        "RECEIVE_BOOT_COMPLETED",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
+        "android.permission.POST_NOTIFICATIONS"
       ],
-      "package": "com.sundaranarus.findmybus"
+      "package": "com.siranjeevi12s.findmybus"
     },
     "web": {
       "output": "static",
@@ -52,11 +59,27 @@
           "isAndroidBackgroundLocationEnabled": true
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "@maplibre/maplibre-react-native"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "releaseChannel": "development",
+      "apiBaseUrl": "http://10.66.204.145:5001/api",
+      "socketUrl": "http://10.66.204.145:5001",
+      "maptilerApiKey": "avboMAhwkXpDoiOqq2oD",
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "10f19a57-44b8-4c0d-bafa-92f1c03aad98"
+      }
+    },
+    "owner": "siranjeevi12s"
   }
 }

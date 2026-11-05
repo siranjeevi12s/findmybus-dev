@@ -1,15 +1,28 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useVerifyOtp } from '../../hooks/auth/useVerifyOtp';
 import { useSendOtp } from '../../hooks/auth/useSendOtp';
 
+const RESEND_COOLDOWN_SECONDS = 60;
+
 export default function VerifyOtpScreen() {
   const { email } = useLocalSearchParams<{ email: string }>();
   const [otp, setOtp] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
   const router = useRouter();
   const verifyOtp = useVerifyOtp();
   const resendOtp = useSendOtp();
+
+  // Countdown cooldown timer
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setInterval(() => {
+        setResendCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [resendCooldown]);
 
   const handleVerify = () => {
     if (!otp || otp.length !== 6 || !email) return;
@@ -25,8 +38,12 @@ export default function VerifyOtpScreen() {
   };
 
   const handleResend = () => {
-    if (!email) return;
-    resendOtp.mutate(email);
+    if (!email || resendCooldown > 0) return;
+    resendOtp.mutate(email, {
+      onSuccess: () => {
+        setResendCooldown(RESEND_COOLDOWN_SECONDS);
+      },
+    });
   };
 
   return (
@@ -60,9 +77,9 @@ export default function VerifyOtpScreen() {
         )}
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={handleResend} disabled={resendOtp.isPending}>
+      <TouchableOpacity onPress={handleResend} disabled={resendOtp.isPending || resendCooldown > 0}>
         <Text className="text-center text-primary-600 font-medium">
-          {resendOtp.isPending ? 'Sending...' : 'Resend Code'}
+          {resendOtp.isPending ? 'Sending...' : resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend Code'}
         </Text>
       </TouchableOpacity>
 

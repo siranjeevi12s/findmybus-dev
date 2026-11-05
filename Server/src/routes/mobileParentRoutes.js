@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const mobileParentController = require('../controllers/mobileParentController');
+const validate = require('../middleware/validate');
+const { registerStudentSchema } = require('../validators/mobileRegisterStudentValidator');
 const { mobileProtect } = require('../middleware/mobileAuth');
 
 // Ensure role is parent
@@ -11,6 +13,9 @@ const parentGuard = (req, res, next) => {
   next();
 };
 
+// Public: student registration must be reachable before the parent has a token
+router.post('/student', validate(registerStudentSchema), mobileParentController.registerStudent);
+
 router.use(mobileProtect);
 router.use(parentGuard);
 
@@ -19,5 +24,6 @@ router.get('/student', mobileParentController.getStudent);
 router.get('/bus', mobileParentController.getBus);
 router.get('/active-trip', mobileParentController.getActiveTrip);
 router.get('/bus-location', mobileParentController.getBusLocation);
+router.get('/trip-locations', mobileParentController.getTripPath);
 
 module.exports = router;

@@ -15,12 +15,34 @@ const mobileParentRoutes = require('./routes/mobileParentRoutes');
 const app = express();
 
 // Middleware setup
+const allowedOrigins = (process.env.CLIENT_URL || '*').split(',').map(u => u.trim());
 app.use(cors({
-  origin: process.env.CLIENT_URL || '*',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, Postman, etc.)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    // In development, also allow common Expo/React Native origins
+    if (process.env.NODE_ENV !== 'production') {
+      return callback(null, true);
+    }
+    return callback(new Error('Not allowed by CORS'), false);
+  },
   credentials: true,
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Structured request logging for real-time debugging (no bodies: avoids PII/tokens)
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) {
+    res.on('finish', () => {
+      console.log(`[HTTP][BACKEND] ${req.method} ${req.originalUrl} -> ${res.statusCode}`);
+    });
+  }
+  next();
+});
 
 // Health Check Endpoint (Required by rules)
 app.get('/health', (req, res) => {

@@ -1,5 +1,21 @@
 const parentService = require('../services/parentService');
 
+// Public endpoint (no auth): parent registers a student from the mobile app
+// or register-student.html before they can login via OTP.
+const registerStudent = async (req, res, next) => {
+  try {
+    const student = await parentService.registerStudent(req.body);
+    return res.status(201).json({
+      success: true,
+      message: 'Student registered successfully',
+      data: student,
+      error: null
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const getProfile = async (req, res, next) => {
   try {
     const { userId } = req.mobileUser;
@@ -79,10 +95,32 @@ const getBusLocation = async (req, res, next) => {
   }
 };
 
+// Breadcrumb trail of the parent's own bus's active trip. The busId is
+// resolved from the authenticated token, so one parent can never read
+// another trip's route.
+const getTripPath = async (req, res, next) => {
+  try {
+    const { userId } = req.mobileUser;
+    const profile = await parentService.getParentProfile(userId);
+    const busId = profile.bus ? profile.bus._id : null;
+    const path = await parentService.getActiveTripPath(busId);
+    return res.status(200).json({
+      success: true,
+      message: 'Trip path fetched',
+      data: path,
+      error: null
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
+  registerStudent,
   getProfile,
   getStudent,
   getBus,
   getActiveTrip,
   getBusLocation,
+  getTripPath,
 };

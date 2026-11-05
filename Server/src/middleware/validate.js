@@ -3,8 +3,10 @@ const validate = (schema) => (req, res, next) => {
     schema.parse(req.body);
     next();
   } catch (error) {
-    if (error.errors && error.errors.length > 0) {
-      const firstError = error.errors[0];
+    // zod v4 exposes .issues (.errors was removed); support both for safety
+    const issues = error.issues ?? error.errors;
+    if (issues && issues.length > 0) {
+      const firstError = issues[0];
       const field = firstError.path.join('.');
       const reason = firstError.message;
       return res.status(400).json({

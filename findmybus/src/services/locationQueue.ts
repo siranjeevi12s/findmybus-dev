@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const QUEUE_KEY = 'findmybus_location_queue';
-const MAX_QUEUE_SIZE = 50;
+const MAX_QUEUE_SIZE = 100;
 
 export interface QueuedLocation {
   tripId: string;
@@ -24,7 +24,12 @@ export async function enqueueLocation(item: QueuedLocation): Promise<void> {
   } catch {}
 }
 
-export async function dequeueAll(): Promise<QueuedLocation[]> {
+/**
+ * Atomically reads and clears the queue. Returns the items that were in the queue.
+ * Any items enqueued after this call will NOT be included in the returned array
+ * and will NOT be deleted — preventing data loss of newly captured points.
+ */
+export async function dequeueAndClear(): Promise<QueuedLocation[]> {
   try {
     const raw = await AsyncStorage.getItem(QUEUE_KEY);
     if (!raw) return [];
@@ -33,6 +38,12 @@ export async function dequeueAll(): Promise<QueuedLocation[]> {
   } catch {
     return [];
   }
+}
+
+export async function clearQueue(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(QUEUE_KEY);
+  } catch {}
 }
 
 export async function getQueueSize(): Promise<number> {

@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
 import type { UserRole } from '../types';
+import { disconnectSocket } from '../services/socketService';
+import { stopLocationTracking } from '../services/locationService';
+import { useTripStore } from './tripStore';
 
 const KEYS = {
   USER_ID: 'findmybus_user_id',
@@ -29,6 +32,7 @@ interface AuthState {
   logout: () => Promise<void>;
   restoreSession: () => Promise<void>;
   setAccessToken: (token: string) => Promise<void>;
+  invalidateSession: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -52,6 +56,28 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: async () => {
+    // Stop background location tracking first
+    try {
+      await stopLocationTracking();
+    } catch (e) {
+      console.error('[AuthStore] Failed to stop location tracking on logout:', e);
+    }
+
+    // Disconnect socket
+    try {
+      disconnectSocket();
+    } catch (e) {
+      console.error('[AuthStore] Failed to disconnect socket on logout:', e);
+    }
+
+    // Clear trip store cache
+    try {
+      useTripStore.getState().reset();
+    } catch (e) {
+      console.error('[AuthStore] Failed to reset trip store on logout:', e);
+    }
+
+    // Clear secure store tokens
     await Promise.all(Object.values(KEYS).map((k) => SecureStore.deleteItemAsync(k)));
     set({ isAuthenticated: false, userId: null, role: null, email: null, accessToken: null, refreshToken: null, isLoading: false });
   },
@@ -71,7 +97,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       } else {
         set({ isLoading: false });
       }
-    } catch {
+    } catch (e) {
+      console.error('[AuthStore] Failed to restore session:', e);
       set({ isLoading: false });
     }
   },
@@ -79,5 +106,20 @@ export const useAuthStore = create<AuthState>((set) => ({
   setAccessToken: async (token: string) => {
     await SecureStore.setItemAsync(KEYS.ACCESS_TOKEN, token);
     set({ accessToken: token });
+  },
+
+  invalidateSession: async () => {
+    await Promise.all(Object.values(KEYS).map((k) => SecureStore.deleteItemAsync(k)));
+    try {
+      disconnectSocket();
+    } catch (e) {
+      console.error('[AuthStore] Failed to disconnect socket on invalidate:', e);
+    }
+    try {
+      useTripStore.getState().reset();
+    } catch (e) {
+      console.error('[AuthStore] Failed to reset trip store on invalidate:', e);
+    }
+    set({ isAuthenticated: false, userId: null, role: null, email: null, accessToken: null, refreshToken: null, isLoading: false });
   },
 }));

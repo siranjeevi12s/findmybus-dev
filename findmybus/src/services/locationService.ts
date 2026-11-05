@@ -1,8 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
-import { tripApi } from '../api/tripApi';
-import { enqueueLocation, dequeueAll } from './locationQueue';
+// driverApi is imported lazily (dynamic import) to break the require cycle:
+// authStore → locationService → driverApi → axiosClient → authStore
+import { enqueueLocation, dequeueAndClear } from './locationQueue';
 import { isAccurateLocation, shouldUpdateLocation } from '../utils/locationFilter';
 
 export const BACKGROUND_LOCATION_TASK = 'FINDMYBUS_BACKGROUND_LOCATION';
@@ -15,6 +16,7 @@ export const BACKGROUND_LOCATION_TASK = 'FINDMYBUS_BACKGROUND_LOCATION';
  */
 const ACTIVE_TRIP_KEY = 'findmybus_active_trip_id';
 const LAST_POINT_KEY = 'findmybus_last_reported_point';
+const BG_ERROR_KEY = 'findmybus_bg_location_error';
 
 type Point = { latitude: number; longitude: number };
 
@@ -53,8 +55,20 @@ async function writeLastPoint(point: Point | null): Promise<void> {
 TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: TaskManager.TaskManagerTaskBody<{ locations: Location.LocationObject[] }>) => {
   if (error) {
     console.warn('[BG Location] Error:', error.message);
+    // Persist error flag so the foreground app can detect background tracking failure
+    try {
+      await AsyncStorage.setItem(BG_ERROR_KEY, JSON.stringify({
+        message: error.message,
+        timestamp: Date.now(),
+      }));
+    } catch {}
     return;
   }
+
+  // Clear any previous background error on successful task invocation
+  try {
+    await AsyncStorage.removeItem(BG_ERROR_KEY);
+  } catch {}
 
   const activeTripId = await readActiveTripId();
   if (!data || !activeTripId) return;
@@ -69,19 +83,53 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: TaskMan
 
     lastLocation = { latitude, longitude };
     await writeLastPoint(lastLocation);
-    const payload = { latitude, longitude, accuracy: accuracy ?? undefined, speed: speed ?? undefined, heading: heading ?? undefined };
+    const payload = {
+      latitude,
+      longitude,
+      accuracy: accuracy ?? undefined,
+      speed: speed ?? undefined,
+      heading: heading ?? undefined,
+      timestamp: loc.timestamp,
+    };
 
-    try {
-      await tripApi.updateLocation(activeTripId, payload);
-      // Drain queue if there are pending items
-      const queued = await dequeueAll();
-      for (const item of queued) {
-        try {
-          await tripApi.updateLocation(item.tripId, { latitude: item.latitude, longitude: item.longitude, accuracy: item.accuracy, speed: item.speed, heading: item.heading });
-        } catch {}
-      }
-    } catch {
-      await enqueueLocation({ tripId: activeTripId, latitude, longitude, accuracy: accuracy ?? undefined, speed: speed ?? undefined, heading: heading ?? undefined, timestamp: loc.timestamp });
+      try {
+        const { driverApi } = await import('../api/driverApi');
+        await driverApi.updateLocation(activeTripId, payload);
+        console.log(
+          `[GPS][DRIVER] posted tripId=${activeTripId} lat=${latitude.toFixed(3)} lng=${longitude.toFixed(3)} acc=${accuracy ?? 'n/a'}`,
+        );
+        // Drain queue if there are pending items — send with original timestamps
+        const queued = await dequeueAndClear();
+        for (const item of queued) {
+          try {
+            const { driverApi: api } = await import('../api/driverApi');
+            await api.updateLocation(item.tripId, {
+              latitude: item.latitude,
+              longitude: item.longitude,
+              accuracy: item.accuracy,
+              speed: item.speed,
+              heading: item.heading,
+              timestamp: item.timestamp, // preserve original capture time
+            });
+          } catch {
+            // Re-queue any items that failed to send
+            await enqueueLocation(item);
+          }
+        }
+        // Only clear queue after all items successfully sent.
+        // dequeueAndClear already removed them, so if allSent is true we're done.
+        // If some failed, they were re-enqueued above.
+      } catch {
+      console.warn(`[GPS][DRIVER] POST failed, queued for retry tripId=${activeTripId}`);
+      await enqueueLocation({
+        tripId: activeTripId,
+        latitude,
+        longitude,
+        accuracy: accuracy ?? undefined,
+        speed: speed ?? undefined,
+        heading: heading ?? undefined,
+        timestamp: loc.timestamp,
+      });
     }
   }
 });
@@ -106,8 +154,8 @@ export async function startLocationTracking(tripId: string): Promise<void> {
 
   await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
     accuracy: Location.Accuracy.High,
-    distanceInterval: 50,        // metres
-    timeInterval: 30000,          // 30 seconds
+    distanceInterval: 10,        // metres — tighter for responsive parent maps
+    timeInterval: 15000,         // 15 seconds — guarantees movement even when slow
     showsBackgroundLocationIndicator: true,
     foregroundService: {
       notificationTitle: 'FindMyBus — Tracking Active',
@@ -129,4 +177,20 @@ export async function stopLocationTracking(): Promise<void> {
 
 export async function setActiveTripId(tripId: string | null): Promise<void> {
   await writeActiveTripId(tripId);
+}
+
+export async function getBackgroundLocationError(): Promise<{ message: string; timestamp: number } | null> {
+  try {
+    const raw = await AsyncStorage.getItem(BG_ERROR_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as { message: string; timestamp: number };
+  } catch {
+    return null;
+  }
+}
+
+export async function clearBackgroundLocationError(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(BG_ERROR_KEY);
+  } catch {}
 }

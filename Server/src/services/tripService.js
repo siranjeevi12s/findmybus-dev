@@ -31,10 +31,16 @@ const startTrip = async (driverId) => {
 
   const io = getSocketManager();
   if (io) {
-    io.to(`bus:${trip.busId.toString()}`).emit('trip:started', {
+    const room = `bus:${trip.busId.toString()}`;
+    io.to(room).emit('trip:started', {
       tripId: trip._id,
       busId: trip.busId,
+      status: 'active',
+      startedAt: trip.startedAt,
     });
+    console.log(`[SOCKET][BACKEND] emitted trip:started room=${room} tripId=${trip._id}`);
+  } else {
+    console.warn(`[SOCKET][BACKEND] trip:started NOT emitted (io unavailable) tripId=${trip._id}`);
   }
 
   // Populate references for the response
@@ -44,7 +50,7 @@ const startTrip = async (driverId) => {
 };
 
 const updateLocation = async (tripId, driverId, locationData) => {
-  const { latitude, longitude, accuracy, speed, heading } = locationData;
+  const { latitude, longitude, accuracy, speed, heading, timestamp } = locationData;
 
   const trip = await Trip.findOne({ _id: tripId, driverId, status: 'active' });
   if (!trip) {
@@ -53,7 +59,24 @@ const updateLocation = async (tripId, driverId, locationData) => {
     throw err;
   }
 
-  const now = new Date();
+  // Out-of-order protection: if the driver reports a capture time older than
+  // the stored position, ignore it so delayed/replayed payloads cannot drag
+  // the bus backwards. (Client-side guards exist; the server must not trust
+  // the client either.)
+  const clientTs = Number.isFinite(Number(timestamp)) ? Number(timestamp) : null;
+  if (clientTs !== null && trip.locationUpdatedAt) {
+    const storedTs = new Date(trip.locationUpdatedAt).getTime();
+    if (clientTs <= storedTs) {
+      console.log(
+        `[GPS][BACKEND] ignored stale update tripId=${trip._id} clientTs=${clientTs} storedTs=${storedTs}`
+      );
+      return trip;
+    }
+  }
+
+  const now = new Date(clientTs !== null && clientTs <= Date.now() + 60_000
+    ? clientTs
+    : Date.now());
 
   // Update trip current location
   trip.currentLatitude = latitude;
@@ -75,10 +98,12 @@ const updateLocation = async (tripId, driverId, locationData) => {
     timestamp: now,
   });
 
-  // Emit socket event
+  // Emit socket event. `updatedAt` matches the REST field name; `timestamp`
+  // is kept for backward compatibility with older app builds.
   const io = getSocketManager();
   if (io) {
-    io.to(`bus:${trip.busId.toString()}`).emit('location:update', {
+    const room = `bus:${trip.busId.toString()}`;
+    io.to(room).emit('location:update', {
       tripId: trip._id,
       busId: trip.busId,
       latitude,
@@ -87,7 +112,13 @@ const updateLocation = async (tripId, driverId, locationData) => {
       speed,
       heading,
       timestamp: now,
+      updatedAt: now,
     });
+    console.log(
+      `[GPS][BACKEND] broadcast room=${room} tripId=${trip._id} lat=${Number(latitude).toFixed(3)} lng=${Number(longitude).toFixed(3)}`
+    );
+  } else {
+    console.warn(`[GPS][BACKEND] location NOT broadcast (io unavailable) tripId=${trip._id}`);
   }
 
   return trip;
@@ -107,10 +138,16 @@ const stopTrip = async (tripId, driverId) => {
 
   const io = getSocketManager();
   if (io) {
-    io.to(`bus:${trip.busId.toString()}`).emit('trip:ended', {
+    const room = `bus:${trip.busId.toString()}`;
+    io.to(room).emit('trip:ended', {
       tripId: trip._id,
       busId: trip.busId,
+      status: trip.status,
+      endedAt: trip.endedAt,
     });
+    console.log(`[SOCKET][BACKEND] emitted trip:ended room=${room} tripId=${trip._id}`);
+  } else {
+    console.warn(`[SOCKET][BACKEND] trip:ended NOT emitted (io unavailable) tripId=${trip._id}`);
   }
 
   return trip;

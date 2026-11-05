@@ -6,8 +6,11 @@ export function useSmoothLocation(
   durationMs = 1000
 ) {
   const [current, setCurrent] = useState<{lat: number, lng: number} | null>(null);
-  const currentRef = useRef(current);
-  currentRef.current = current;
+  const currentRef = useRef<{lat: number, lng: number} | null>(null);
+
+  useEffect(() => {
+    currentRef.current = current;
+  }, [current]);
 
   useEffect(() => {
     if (targetLat == null || targetLng == null) return;

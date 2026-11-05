@@ -3,13 +3,15 @@ import { View, Text, TextInput, TouchableOpacity, ActivityIndicator } from 'reac
 import { useRouter } from 'expo-router';
 import { useSendOtp } from '../../hooks/auth/useSendOtp';
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const router = useRouter();
   const sendOtp = useSendOtp();
 
   const handleSendOtp = () => {
-    if (!email) return;
+    if (!email || !EMAIL_REGEX.test(email)) return;
     sendOtp.mutate(email, {
       onSuccess: () => {
         router.push({ pathname: '/(auth)/verify-otp', params: { email } });
@@ -38,7 +40,7 @@ export default function LoginScreen() {
       <TouchableOpacity
         className="w-full h-12 bg-primary-600 rounded-lg flex-row items-center justify-center"
         onPress={handleSendOtp}
-        disabled={sendOtp.isPending || !email}
+        disabled={sendOtp.isPending || !email || !EMAIL_REGEX.test(email)}
       >
         {sendOtp.isPending ? (
           <ActivityIndicator color="#ffffff" />

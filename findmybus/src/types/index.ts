@@ -107,6 +107,15 @@ export interface BusLocation {
   updatedAt?: string;
 }
 
+export interface BusLocationHistory {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+  speed?: number;
+  heading?: number;
+  timestamp: number;
+}
+
 // ─── Driver Profile ───────────────────────────────────────────────────────────
 export interface DriverProfile {
   id: string;

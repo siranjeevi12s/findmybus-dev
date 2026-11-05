@@ -1,6 +1,10 @@
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_for_find_my_bus_app';
+// Fail fast on misconfiguration (see utils/mobileJwt.js for rationale).
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET must be set in the environment');
+}
 
 /**
  * Middleware that validates mobile JWT (payload: { userId, role })

@@ -9,9 +9,14 @@ export function useVerifyOtp() {
 
   return useMutation({
     mutationFn: async ({ email, otp }: { email: string; otp: string }) => {
-      const { data } = await authApi.verifyOtp(email, otp);
-      if (!data.success) throw new Error(data.message);
-      return data.data;
+      try {
+        const { data } = await authApi.verifyOtp(email.trim().toLowerCase(), otp);
+        if (!data.success) throw new Error(data.message);
+        return data.data;
+      } catch (error) {
+        const message = (error as AxiosError<ApiResponse>).response?.data?.message;
+        throw new Error(message || 'Unable to verify the code. Please try again.');
+      }
     },
     onSuccess: async (data) => {
       await login({
