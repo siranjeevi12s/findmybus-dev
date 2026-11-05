@@ -15,7 +15,17 @@ const mobileParentRoutes = require('./routes/mobileParentRoutes');
 const app = express();
 
 // Middleware setup
-const allowedOrigins = (process.env.CLIENT_URL || '*').split(',').map(u => u.trim());
+const configuredOrigins = (process.env.CLIENT_URL || '*')
+  .split(',')
+  .map(u => u.trim())
+  .filter(Boolean);
+const allowedOrigins = [
+  ...new Set([
+    ...configuredOrigins,
+    'https://regester12s.netlify.app',
+    'https://success12s.netlify.app',
+  ]),
+];
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, Postman, etc.)
