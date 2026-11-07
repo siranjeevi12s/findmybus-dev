@@ -46,6 +46,33 @@ export default defineConfig([
 
 ```
 
+## Configuration
+
+Copy `.env.example` to `.env.local` and set `VITE_API_URL` to the HTTPS API
+origin in deployed environments. The student registration flow is available at
+`/register-student` and uses the public `POST /api/mobile/parent/student`
+endpoint.
+
+The API server must list the deployed browser origins in `CLIENT_URL` (or
+`CORS_ORIGINS`). The registration page uses
+`https://regester12s.netlify.app`, and the Find My Bus portal uses
+`https://find-my-school-bus.netlify.app`. Do not set either variable to `*` in
+production. Successful registration remains on the success page; it does not
+grant portal access.
+
+### Azure Static Web Apps deployment
+
+Build from this directory with `npm ci` followed by `npm run build`, then
+deploy the generated `dist` directory. Set `VITE_API_URL` and
+`VITE_SUCCESS_PAGE_URL` as build-time environment variables; Vite embeds
+`VITE_*` values into the JavaScript bundle.
+
+The committed `public/staticwebapp.config.json` is copied into `dist` and
+rewrites React Router routes to `index.html`, so direct requests to
+`/register-student`, `/login`, and other client-side routes work on Azure.
+Add the deployed Azure hostname to the API server's production `CLIENT_URL`
+before testing browser requests.
+
 You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
 
 ```js

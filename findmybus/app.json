@@ -67,9 +67,6 @@
       "reactCompiler": true
     },
     "extra": {
-      "releaseChannel": "development",
-      "apiBaseUrl": "http://10.66.204.145:5001/api",
-      "socketUrl": "http://10.66.204.145:5001",
       "maptilerApiKey": "avboMAhwkXpDoiOqq2oD",
       "router": {
         "asyncRoutes": {

@@ -7,14 +7,21 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
+  const [validationMessage, setValidationMessage] = useState('');
   const router = useRouter();
   const sendOtp = useSendOtp();
 
   const handleSendOtp = () => {
-    if (!email || !EMAIL_REGEX.test(email)) return;
-    sendOtp.mutate(email, {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || !EMAIL_REGEX.test(normalizedEmail)) {
+      setValidationMessage('Enter a valid email address.');
+      return;
+    }
+
+    setValidationMessage('');
+    sendOtp.mutate(normalizedEmail, {
       onSuccess: () => {
-        router.push({ pathname: '/(auth)/verify-otp', params: { email } });
+        router.push({ pathname: '/(auth)/verify-otp', params: { email: normalizedEmail } });
       },
     });
   };
@@ -30,17 +37,20 @@ export default function LoginScreen() {
           className="w-full h-12 px-4 border border-gray-300 rounded-lg bg-gray-50 text-gray-900"
           placeholder="e.g. driver@school.com"
           value={email}
-          onChangeText={setEmail}
           keyboardType="email-address"
           autoCapitalize="none"
           autoCorrect={false}
+          onChangeText={(value) => {
+            setEmail(value);
+            setValidationMessage('');
+          }}
         />
       </View>
 
       <TouchableOpacity
         className="w-full h-12 bg-primary-600 rounded-lg flex-row items-center justify-center"
         onPress={handleSendOtp}
-        disabled={sendOtp.isPending || !email || !EMAIL_REGEX.test(email)}
+        disabled={sendOtp.isPending}
       >
         {sendOtp.isPending ? (
           <ActivityIndicator color="#ffffff" />
@@ -49,8 +59,10 @@ export default function LoginScreen() {
         )}
       </TouchableOpacity>
       
-      {sendOtp.isError && (
-        <Text className="text-red-500 text-center mt-4 text-sm">{sendOtp.error.message}</Text>
+      {(validationMessage || sendOtp.isError) && (
+        <Text className="text-red-500 text-center mt-4 text-sm">
+          {validationMessage || sendOtp.error?.message}
+        </Text>
       )}
     </View>
   );

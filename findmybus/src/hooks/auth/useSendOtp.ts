@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
-import { authApi } from '../../api/authApi';
-import type { AxiosError } from 'axios';
+import { authApi, type SendOtpResponse } from '../../api/authApi';
+import { isAxiosError } from 'axios';
 import type { ApiResponse } from '../../types';
 
 export interface OtpError {
@@ -9,26 +9,48 @@ export interface OtpError {
   statusCode?: number;
 }
 
+class OtpRequestError extends Error implements OtpError {
+  type: OtpError['type'];
+  statusCode?: number;
+
+  constructor(error: OtpError) {
+    super(error.message);
+    this.name = 'OtpRequestError';
+    this.type = error.type;
+    this.statusCode = error.statusCode;
+  }
+}
+
 export function useSendOtp() {
-  return useMutation({
+  return useMutation<ApiResponse<SendOtpResponse>, Error, string>({
     mutationFn: async (email: string) => {
       try {
         const { data } = await authApi.sendOtp(email.trim().toLowerCase());
         if (!data.success) throw new Error(data.message);
         return data;
       } catch (error) {
-        const otpError = classifyError(error as AxiosError<ApiResponse>);
-        throw new Error(otpError.message);
+        throw new OtpRequestError(classifyError(error));
       }
     },
-    onError: (error: AxiosError<ApiResponse>) => {
+    onError: (error: unknown) => {
       const otpError = classifyError(error);
       console.error('Send OTP Error:', otpError);
     },
   });
 }
 
-function classifyError(error: AxiosError<ApiResponse>): OtpError {
+function classifyError(error: unknown): OtpError {
+  if (error instanceof OtpRequestError) {
+    return error;
+  }
+
+  if (!isAxiosError<ApiResponse>(error)) {
+    return {
+      type: 'unknown',
+      message: error instanceof Error ? error.message : 'An unexpected error occurred. Please try again.',
+    };
+  }
+
   // Network error: no response received at all
   if (!error.response) {
     if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAuthStore } from '../store/authStore';
+import { initUpdates } from '../services/updateService';
 import '../global.css';
 
 const queryClient = new QueryClient();
@@ -14,6 +15,11 @@ export default function RootLayout() {
   useEffect(() => {
     restoreSession();
   }, [restoreSession]);
+
+  // OTA bootstrap: no-op in __DEV__, see src/services/updateService.ts
+  useEffect(() => {
+    initUpdates();
+  }, []);
 
   useEffect(() => {
     if (isLoading) return;

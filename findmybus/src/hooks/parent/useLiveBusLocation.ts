@@ -12,6 +12,7 @@ import {
   setActiveBusId,
 } from '../../services/socketService';
 import type { BusLocation, BusLocationHistory } from '../../types';
+import { devLog, devWarn } from '../../utils/log';
 
 const MIN_DISTANCE_METERS = 5;
 
@@ -101,7 +102,7 @@ export function useLiveBusLocation(busId?: string) {
             currentTripId &&
             String(data.tripId) !== String(currentTripId)
           ) {
-            console.warn(
+            devWarn(
               `[GPS][PARENT] ignored update from trip ${data.tripId} (current trip ${currentTripId})`,
             );
             return;
@@ -121,7 +122,7 @@ export function useLiveBusLocation(busId?: string) {
           };
           setBusLocation(newLoc);
           queryClient.setQueryData(['busLocation', busId], newLoc);
-          console.log(
+          devLog(
             `[GPS][PARENT] location:update tripId=${newLoc.tripId} lat=${newLoc.latitude?.toFixed(3)} lng=${newLoc.longitude?.toFixed(3)}`,
           );
 
@@ -171,7 +172,7 @@ export function useLiveBusLocation(busId?: string) {
           }
         },
         (data: { tripId: string; busId: string }) => {
-          console.log(
+          devLog(
             `[SOCKET][PARENT] trip:started tripId=${data.tripId} busId=${data.busId} — switching to live tracking`,
           );
           // Show the "trip started" state immediately, even before the first
@@ -185,7 +186,7 @@ export function useLiveBusLocation(busId?: string) {
           queryClient.invalidateQueries({ queryKey: ['busPath', busId] });
         },
         (data: { tripId?: string }) => {
-          console.log(`[SOCKET][PARENT] trip:ended tripId=${data?.tripId} — returning to idle state`);
+          devLog(`[SOCKET][PARENT] trip:ended tripId=${data?.tripId} — returning to idle state`);
           const inactive = { active: false };
           setBusLocation(inactive);
           queryClient.setQueryData(['busLocation', busId], inactive);

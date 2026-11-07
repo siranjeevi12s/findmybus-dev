@@ -1,0 +1,31 @@
+# Exclude local build artifacts and logs from the EAS archive.
+# Note: a .easignore REPLACES the default (gitignore-based) rules, so anything
+# heavy that should never be uploaded must be listed here explicitly.
+
+# Dependencies are re-installed on the EAS workers — never upload them.
+node_modules/
+
+# Locally prebuilt native projects. EAS runs `expo prebuild` on its own
+# workers, so these generated folders (and their 100+ MB build caches) are
+# unnecessary in the archive.
+android/
+ios/
+
+# Local build outputs / caches
+dist/
+web-build/
+.expo/
+.kotlin/
+
+# Logs & scratch files
+*.log
+*.log.*
+metro.log
+metro.log.*
+gradle-release.log
+vite.log
+*.old
+
+# Tests / dev-only
+__tests__/
+coverage/

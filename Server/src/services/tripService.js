@@ -2,6 +2,7 @@ const Trip = require('../models/Trip');
 const TripLocation = require('../models/TripLocation');
 const BusDriverAssignment = require('../models/BusDriverAssignment');
 const { getSocketManager } = require('../utils/socketManager');
+const { debugLog } = require('../utils/log');
 
 const startTrip = async (driverId) => {
   const assignment = await BusDriverAssignment.findOne({ driverId, status: 'active' })
@@ -38,7 +39,7 @@ const startTrip = async (driverId) => {
       status: 'active',
       startedAt: trip.startedAt,
     });
-    console.log(`[SOCKET][BACKEND] emitted trip:started room=${room} tripId=${trip._id}`);
+    debugLog(`[SOCKET][BACKEND] emitted trip:started room=${room} tripId=${trip._id}`);
   } else {
     console.warn(`[SOCKET][BACKEND] trip:started NOT emitted (io unavailable) tripId=${trip._id}`);
   }
@@ -67,7 +68,7 @@ const updateLocation = async (tripId, driverId, locationData) => {
   if (clientTs !== null && trip.locationUpdatedAt) {
     const storedTs = new Date(trip.locationUpdatedAt).getTime();
     if (clientTs <= storedTs) {
-      console.log(
+      debugLog(
         `[GPS][BACKEND] ignored stale update tripId=${trip._id} clientTs=${clientTs} storedTs=${storedTs}`
       );
       return trip;
@@ -114,7 +115,7 @@ const updateLocation = async (tripId, driverId, locationData) => {
       timestamp: now,
       updatedAt: now,
     });
-    console.log(
+    debugLog(
       `[GPS][BACKEND] broadcast room=${room} tripId=${trip._id} lat=${Number(latitude).toFixed(3)} lng=${Number(longitude).toFixed(3)}`
     );
   } else {
@@ -145,7 +146,7 @@ const stopTrip = async (tripId, driverId) => {
       status: trip.status,
       endedAt: trip.endedAt,
     });
-    console.log(`[SOCKET][BACKEND] emitted trip:ended room=${room} tripId=${trip._id}`);
+    debugLog(`[SOCKET][BACKEND] emitted trip:ended room=${room} tripId=${trip._id}`);
   } else {
     console.warn(`[SOCKET][BACKEND] trip:ended NOT emitted (io unavailable) tripId=${trip._id}`);
   }

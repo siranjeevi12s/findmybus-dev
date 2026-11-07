@@ -7,16 +7,15 @@ const app = require('./app');
 const connectDB = require('./config/db');
 const { verifyMobileAccessToken } = require('./utils/mobileJwt');
 const { initSocketManager } = require('./utils/socketManager');
+const { debugLog } = require('./utils/log');
+const { corsOptions } = require('./config/cors');
 const Student = require('./models/Student');
 
 const PORT = process.env.PORT || 5000;
 const httpServer = http.createServer(app);
 
 const io = new SocketServer(httpServer, {
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST'],
-  },
+  cors: corsOptions,
 });
 
 // Socket.IO auth middleware
@@ -38,7 +37,7 @@ io.use((socket, next) => {
 
 io.on('connection', (socket) => {
   const { userId, role } = socket.data;
-  console.log(`[SOCKET][BACKEND] connected role=${role} userId=${userId} socketId=${socket.id}`);
+  debugLog(`[SOCKET][BACKEND] connected role=${role} userId=${userId} socketId=${socket.id}`);
   
   if (role === 'driver') {
     socket.join(`driver:${userId}`);
@@ -62,14 +61,14 @@ io.on('connection', (socket) => {
         return;
       }
       socket.join(`bus:${busId}`);
-      console.log(`[SOCKET][BACKEND] parent joined room=bus:${busId} userId=${userId}`);
+      debugLog(`[SOCKET][BACKEND] parent joined room=bus:${busId} userId=${userId}`);
     } catch (err) {
       console.error(`[SOCKET][BACKEND] join-bus authorization error: ${err.message}`);
     }
   });
   
   socket.on('disconnect', (reason) => {
-    console.log(`[SOCKET][BACKEND] disconnected role=${role} userId=${userId} reason=${reason}`);
+    debugLog(`[SOCKET][BACKEND] disconnected role=${role} userId=${userId} reason=${reason}`);
   });
 });
 

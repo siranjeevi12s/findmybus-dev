@@ -2,6 +2,7 @@ import { io, Socket } from 'socket.io-client';
 // eslint-disable-next-line import/no-named-as-default
 import env from '../env';
 import { useTripStore } from '../store/tripStore';
+import { devLog } from '../utils/log';
 
 let socket: Socket | null = null;
 let currentToken: string | null = null;
@@ -76,7 +77,7 @@ export function connectSocket(accessToken: string): Socket {
     if (activeBusId) {
       instance.emit('join-bus', activeBusId);
     }
-    console.log(`[SOCKET][PARENT] connected socketId=${instance.id} joinedRoom=${activeBusId ?? 'none'}`);
+    devLog(`[SOCKET][PARENT] connected socketId=${instance.id} joinedRoom=${activeBusId ?? 'none'}`);
   });
 
   instance.on('disconnect', (reason) => {
@@ -96,7 +97,7 @@ export function connectSocket(accessToken: string): Socket {
       try {
         const { refreshSocketToken } = await import('../api/axiosClient');
         await refreshSocketToken();
-        console.log('[SOCKET][PARENT] token refreshed, reconnecting socket');
+        devLog('[SOCKET][PARENT] token refreshed, reconnecting socket');
       } catch (refreshErr) {
         console.warn(
           '[SOCKET][PARENT] token refresh failed:',
@@ -146,7 +147,7 @@ export function disconnectSocket(): void {
 export function joinBusRoom(busId: string): void {
   activeBusId = busId;
   socket?.emit('join-bus', busId);
-  console.log(`[SOCKET][PARENT] join-bus room=bus:${busId}`);
+  devLog(`[SOCKET][PARENT] join-bus room=bus:${busId}`);
 }
 
 export function leaveBusRoom(): void {

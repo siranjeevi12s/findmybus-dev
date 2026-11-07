@@ -5,6 +5,7 @@ import * as TaskManager from 'expo-task-manager';
 // authStore → locationService → driverApi → axiosClient → authStore
 import { enqueueLocation, dequeueAndClear } from './locationQueue';
 import { isAccurateLocation, shouldUpdateLocation } from '../utils/locationFilter';
+import { devLog } from '../utils/log';
 
 export const BACKGROUND_LOCATION_TASK = 'FINDMYBUS_BACKGROUND_LOCATION';
 
@@ -95,7 +96,7 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: TaskMan
       try {
         const { driverApi } = await import('../api/driverApi');
         await driverApi.updateLocation(activeTripId, payload);
-        console.log(
+        devLog(
           `[GPS][DRIVER] posted tripId=${activeTripId} lat=${latitude.toFixed(3)} lng=${longitude.toFixed(3)} acc=${accuracy ?? 'n/a'}`,
         );
         // Drain queue if there are pending items — send with original timestamps
