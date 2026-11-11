@@ -1,5 +1,6 @@
 const Driver = require('../models/Driver');
 const BusDriverAssignment = require('../models/BusDriverAssignment');
+const { escapeRegex } = require('../utils/escapeRegex');
 
 /**
  * Create a new driver
@@ -38,6 +39,7 @@ const getDrivers = async (schoolId, { page = 1, limit = 10, search = '' }) => {
   };
 
   if (search) {
+    search = escapeRegex(search);
     query.$or = [
       { firstName: { $regex: search, $options: 'i' } },
       { lastName: { $regex: search, $options: 'i' } },

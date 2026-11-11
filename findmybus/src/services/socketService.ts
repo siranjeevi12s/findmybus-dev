@@ -42,19 +42,24 @@ export function setActiveBusId(busId: string | null): void {
 export function connectSocket(accessToken: string): Socket {
   currentToken = accessToken;
 
-  // Reuse socket if same token and already connected
+  // ALWAYS reuse the single socket instance. Creating a second io() while one
+  // already exists orphans the first (it keeps reconnecting forever and its
+  // connect/disconnect handlers fight over the connection status), produces
+  // duplicate room joins, and can leave trip/location listeners bound to the
+  // wrong instance — the parent then sticks on "Connecting..." and misses
+  // updates. Only ever construct a socket when none exists yet.
   if (socket) {
     const existingToken = (socket.auth as { token?: string } | undefined)?.token;
-    if (existingToken === accessToken && socket.connected) return socket;
     if (existingToken !== accessToken) {
-      (socket as any).auth = { token: accessToken };
+      socket.auth = { token: accessToken };
       if (socket.connected) {
         socket.disconnect();
       }
-      socket.connect();
-      return socket;
     }
-    if (socket.connected) return socket;
+    if (!socket.connected) {
+      socket.connect();
+    }
+    return socket;
   }
 
   const instance = io(env.SOCKET_URL, {

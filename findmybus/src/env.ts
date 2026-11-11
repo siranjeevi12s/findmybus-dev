@@ -50,7 +50,7 @@ if (!maptilerKey) {
 
 const mapStyleUrl =
   process.env.EXPO_PUBLIC_MAPTILER_STYLE_URL?.trim() ||
-  `https://api.maptiler.com/maps/streets-v2/style.json?key=${encodeURIComponent(maptilerKey)}`;
+  `https://api.maptiler.com/maps/basic-v2/style.json?key=${encodeURIComponent(maptilerKey)}`;
 
 export const env = {
   API_BASE_URL: apiBaseUrl,

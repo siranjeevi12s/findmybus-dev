@@ -13,6 +13,7 @@ import {
 } from '@maplibre/maplibre-react-native';
 import BusMarker from '../BusMarker';
 import MapControls from '../MapControls';
+import mapStyleClean from '../../assets/map-style-clean.json';
 import env from '../../env';
 import { ZOOM_MIN, ZOOM_MAX } from './constants';
 
@@ -68,7 +69,7 @@ function LiveMap({
     <>
       <Map
         style={{ flex: 1 }}
-        mapStyle={env.MAPTILER_STYLE_URL}
+        mapStyle={mapStyleClean as never}
         logo={false}
         attribution={true}
         onRegionWillChange={onRegionWillChange}

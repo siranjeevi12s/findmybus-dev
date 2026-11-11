@@ -1,14 +1,14 @@
 import { View, Text, ActivityIndicator } from 'react-native';
 import type { NativeSyntheticEvent } from 'react-native';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type CameraRef, type ViewStateChangeEvent } from '@maplibre/maplibre-react-native';
 import { useParentProfile } from '../../hooks/parent/useParentProfile';
 import { useLiveBusLocation } from '../../hooks/parent/useLiveBusLocation';
 import { useParentLocation } from '../../hooks/parent/useParentLocation';
 import { useTripStore } from '../../store/tripStore';
-import LiveMap from '../../components/parent/LiveMap';
 import WaitingView from '../../components/parent/WaitingView';
 import InfoPanel from '../../components/parent/InfoPanel';
+
 import {
   STALE_LOCATION_MS,
   ZOOM_DEFAULT,
@@ -17,6 +17,8 @@ import {
   ZOOM_STEP,
   ZOOM_ANIMATION_MS,
 } from '../../components/parent/constants';
+
+const LiveMap = lazy(() => import('../../components/parent/LiveMap'));
 
 export default function ParentDashboard() {
   const { data: profile, isLoading: isProfileLoading } = useParentProfile();
@@ -37,18 +39,15 @@ export default function ParentDashboard() {
   const tripActive = !!busLocation?.active;
   const hasLocation = tripActive && busLat != null && busLng != null;
 
-  const [staleCheckNow, setStaleCheckNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setStaleCheckNow(Date.now()), 30_000);
-    return () => clearInterval(timer);
-  }, []);
-
   const updatedAt = busLocation?.updatedAt;
+  // Staleness is evaluated relative to the last render (triggered when a new
+  // location arrives). We deliberately do NOT poll on a timer here: that used
+  // to re-render the entire dashboard every 30s solely to recompute isStale.
   const isStale = useMemo(() => {
     if (!updatedAt) return false;
     const ts = Date.parse(String(updatedAt));
-    return Number.isFinite(ts) && staleCheckNow - ts > STALE_LOCATION_MS;
-  }, [staleCheckNow, updatedAt]);
+    return Number.isFinite(ts) && Date.now() - ts > STALE_LOCATION_MS;
+  }, [updatedAt]);
 
   // ── Manual camera controls ────────────────────────────────────────────────
   // Zoom is declarative state so manual zoom survives the follow-camera stop
@@ -177,7 +176,8 @@ export default function ParentDashboard() {
       {/* Map Area */}
       <View className="flex-1 bg-slate-200">
         {hasLocation ? (
-          <LiveMap
+          <Suspense fallback={<View className="flex-1 bg-slate-200" />}>
+            <LiveMap
             busLat={busLat}
             busLng={busLng}
             parentLoc={parentLoc}
@@ -191,6 +191,7 @@ export default function ParentDashboard() {
             onLocate={handleLocate}
             locateBusy={locateBusy}
           />
+          </Suspense>
         ) : tripActive ? (
           // Trip started but no GPS fix received yet — distinct from "no trip"
           <WaitingView mode="waiting-fix" />

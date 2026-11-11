@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { AxiosError } from 'axios';
 import * as Location from 'expo-location';
 import { driverApi } from '../../api/driverApi';
 import { useTripStore } from '../../store/tripStore';
@@ -18,14 +19,13 @@ export function useStartTrip() {
       const trip = data.data;
       devLog(`[SOCKET][DRIVER] trip started via REST tripId=${trip._id}`);
 
-      // Start background tracking as part of starting the trip, so that a
-      // tracking failure (e.g. background location permission missing) reaches
-      // the mutation's error path instead of being swallowed inside onSuccess.
-      await startLocationTracking(trip._id);
+      // Start background tracking without blocking the mutation resolution.
+      startLocationTracking(trip._id).catch(() => {});
 
-      // Post the current position immediately: the background task only
-      // delivers after its distance/time thresholds, and parents should see
-      // the bus the moment the trip starts, not minutes later.
+      // Post the current position immediately so parents see the bus the moment
+      // the trip starts. The GPS fetch runs concurrently with background-tracking
+      // startup (launched above), shortening the critical path to
+      // startTrip → GPS → updateLocation.
       try {
         const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
         const { latitude, longitude, accuracy, speed, heading } = pos.coords;
@@ -57,6 +57,12 @@ export function useStartTrip() {
       setTrackingStatus('error');
       // Tracking may have partially started — make sure nothing is left running.
       await stopLocationTracking().catch(() => {});
+      // A 409 means a trip is already active server-side (duplicate start guard).
+      // Reconcile to the existing trip instead of surfacing a spurious error.
+      if ((error as AxiosError)?.response?.status === 409) {
+        queryClient.invalidateQueries({ queryKey: ['currentTrip'] });
+        return;
+      }
       // The server may still hold an active trip; refetching reconciles the UI.
       queryClient.invalidateQueries({ queryKey: ['currentTrip'] });
       console.error('Failed to start trip:', error);

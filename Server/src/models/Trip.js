@@ -47,6 +47,9 @@ const tripSchema = new mongoose.Schema(
 // Query indexes for common lookups
 tripSchema.index({ driverId: 1, status: 1 });
 tripSchema.index({ busId: 1, status: 1 });
+// Auto-expire completed / cancelled trips 90 days after they end. Active
+// trips (endedAt === null) are never touched by the TTL thread.
+tripSchema.index({ endedAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 90 });
 
 const Trip = mongoose.model('Trip', tripSchema);
 

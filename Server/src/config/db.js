@@ -12,6 +12,20 @@ const connectDB = async () => {
       connectTimeoutMS: 10000,
     });
     console.log(`MongoDB connected: ${conn.connection.name} on ${conn.connection.host}`);
+
+    // Attach listeners so post-connect transient errors (e.g. an Atlas TLS
+    // blip) are logged rather than emitted as an unhandled 'error' event that
+    // crashes the process. The driver auto-reconnects on its own.
+    conn.connection.on('error', (e) => {
+      console.error('[DB] connection error:', e && e.message ? e.message : e);
+    });
+    conn.connection.on('disconnected', () => {
+      console.warn('[DB] disconnected — driver will attempt to reconnect');
+    });
+    conn.connection.on('reconnected', () => {
+      console.log('[DB] reconnected');
+    });
+
     return conn;
   } catch (error) {
     throw new Error(`Database connection error: ${error.message}`);

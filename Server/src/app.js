@@ -21,6 +21,16 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Baseline security headers (dependency-free equivalent of the common helmet
+// defaults relevant to a JSON API).
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('X-DNS-Prefetch-Control', 'off');
+  next();
+});
+
 // Structured request logging for real-time debugging (no bodies: avoids PII/tokens)
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) {

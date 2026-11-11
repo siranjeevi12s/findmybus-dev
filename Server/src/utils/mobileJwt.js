@@ -26,7 +26,7 @@ const generateMobileRefreshToken = (userId, role) => {
 
 const verifyMobileAccessToken = (token) => {
   try {
-    return jwt.verify(token, JWT_SECRET);
+    return jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
   } catch {
     return null;
   }
@@ -34,7 +34,7 @@ const verifyMobileAccessToken = (token) => {
 
 const verifyMobileRefreshToken = (token) => {
   try {
-    return jwt.verify(token, JWT_REFRESH_SECRET);
+    return jwt.verify(token, JWT_REFRESH_SECRET, { algorithms: ['HS256'] });
   } catch {
     return null;
   }

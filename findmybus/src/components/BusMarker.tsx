@@ -70,7 +70,13 @@ function easeLinear(t: number): number {
 export default function BusMarker({ cameraRef, isFollowingRef }: BusMarkerProps) {
   const busLocation = useTripStore((s) => s.busLocation);
 
-  const [pose, setPose] = useState<Pose | null>(null);
+  const [pose, setPose] = useState<Pose | null>(() => {
+    const { latitude, longitude, heading } = busLocation ?? {};
+    if (latitude != null && longitude != null) {
+      return { lat: latitude, lng: longitude, heading: heading ?? 0 };
+    }
+    return null;
+  });
   const poseRef = useRef<Pose | null>(null);
   const rafRef = useRef<number | null>(null);
   const lastTargetTsRef = useRef(0);   // payload timestamp — ordering / staleness
@@ -176,6 +182,12 @@ export default function BusMarker({ cameraRef, isFollowingRef }: BusMarkerProps)
     // gestures flip isFollowingRef false, which stops all camera commands
     // instantly while the marker keeps moving — map and bus stay independent.
     const step = () => {
+      // Manual gesture took over: stop issuing camera commands immediately so
+      // the map and marker no longer fight each other while the user pans.
+      if (!isFollowingRef.current) {
+        rafRef.current = null;
+        return;
+      }
       const t = Math.min((Date.now() - startTime) / duration, 1);
       const e = easeLinear(t);
       const next: Pose = {

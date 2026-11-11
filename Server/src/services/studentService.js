@@ -1,5 +1,6 @@
 const Student = require('../models/Student');
 const Bus = require('../models/Bus');
+const { escapeRegex } = require('../utils/escapeRegex');
 
 /**
  * Create a new student
@@ -51,6 +52,7 @@ const getStudents = async (schoolId, { page = 1, limit = 10, search = '' }) => {
   };
 
   if (search) {
+    search = escapeRegex(search);
     query.$or = [
       { studentName: { $regex: search, $options: 'i' } },
       { studentId: { $regex: search, $options: 'i' } },

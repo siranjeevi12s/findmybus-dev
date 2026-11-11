@@ -6,6 +6,10 @@ const locationUpdateSchema = z.object({
   accuracy: z.number().optional(),
   speed: z.number().optional(),
   heading: z.number().min(0).max(360).optional(),
+  // Capture time used by the server's out-of-order guard. Accept number or
+  // numeric string (the service coerces with Number()); keep it in the schema
+  // so body sanitization does not strip it.
+  timestamp: z.union([z.number(), z.string()]).optional(),
 });
 
 module.exports = { locationUpdateSchema };

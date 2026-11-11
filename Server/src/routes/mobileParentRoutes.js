@@ -4,6 +4,7 @@ const mobileParentController = require('../controllers/mobileParentController');
 const validate = require('../middleware/validate');
 const { registerStudentSchema } = require('../validators/mobileRegisterStudentValidator');
 const { mobileProtect } = require('../middleware/mobileAuth');
+const { createRateLimiter } = require('../middleware/rateLimit');
 
 // Ensure role is parent
 const parentGuard = (req, res, next) => {
@@ -13,8 +14,10 @@ const parentGuard = (req, res, next) => {
   next();
 };
 
-// Public: student registration must be reachable before the parent has a token
-router.post('/student', validate(registerStudentSchema), mobileParentController.registerStudent);
+// Public: student registration must be reachable before the parent has a token.
+// Rate-limited to blunt mass-registration / data-injection abuse.
+const registerLimiter = createRateLimiter({ windowMs: 60_000, max: 5, keyFn: (req) => req.ip });
+router.post('/student', registerLimiter, validate(registerStudentSchema), mobileParentController.registerStudent);
 
 router.use(mobileProtect);
 router.use(parentGuard);

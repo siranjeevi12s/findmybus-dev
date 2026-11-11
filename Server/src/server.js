@@ -74,6 +74,21 @@ io.on('connection', (socket) => {
 
 initSocketManager(io);
 
+// Resilience: a transient MongoDB Atlas/network error must not take down the
+// whole API + socket server. Log unhandled rejections (often a floating promise
+// during a DB blip) instead of letting Node crash the process. An uncaught
+// exception leaves state unknown, so log and exit cleanly for the supervisor
+// (nodemon/systemd) to restart.
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL-GUARD] Unhandled promise rejection:', reason instanceof Error ? reason.message : reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL-GUARD] Uncaught exception:', err && err.stack ? err.stack : err);
+  httpServer.close(() => process.exit(1));
+  // Force-exit if connections do not drain promptly.
+  setTimeout(() => process.exit(1), 5000).unref();
+});
+
 // Connect to MongoDB
 connectDB().then(() => {
   httpServer.listen(PORT, '0.0.0.0', () => {

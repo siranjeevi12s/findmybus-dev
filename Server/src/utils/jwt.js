@@ -18,7 +18,7 @@ const generateRefreshToken = (schoolId) => {
 
 const verifyAccessToken = (token) => {
   try {
-    return jwt.verify(token, JWT_SECRET);
+    return jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
   } catch (error) {
     return null;
   }
@@ -26,7 +26,7 @@ const verifyAccessToken = (token) => {
 
 const verifyRefreshToken = (token) => {
   try {
-    return jwt.verify(token, JWT_REFRESH_SECRET);
+    return jwt.verify(token, JWT_REFRESH_SECRET, { algorithms: ['HS256'] });
   } catch (error) {
     return null;
   }

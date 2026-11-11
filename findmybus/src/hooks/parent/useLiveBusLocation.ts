@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { AppState } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { parentApi } from '../../api/parentApi';
 import { useTripStore } from '../../store/tripStore';
@@ -35,6 +36,7 @@ export function useLiveBusLocation(busId?: string) {
   const addBusPathPoint = useTripStore((state) => state.addBusPathPoint);
   const clearBusPath = useTripStore((state) => state.clearBusPath);
   const setSocketConnected = useTripStore((state) => state.setSocketConnected);
+  const isConnected = useTripStore((state) => state.isConnectedToSocket);
 
   // Track whether socket listeners are already attached to prevent duplicates
   const listenersRef = useRef(false);
@@ -50,7 +52,10 @@ export function useLiveBusLocation(busId?: string) {
       return loc;
     },
     enabled: !!busId,
-    refetchInterval: 30000, // Fallback polling if socket fails
+    // Only poll when the socket is down. When connected, real-time location
+    // updates arrive via socket and REST polling is redundant (it would
+    // re-fetch the same data every 30s and force store writes / re-renders).
+    refetchInterval: () => (isConnected ? false : 30000),
   });
 
   // Route history for the active trip — seeds the breadcrumb polyline when a
@@ -211,6 +216,23 @@ export function useLiveBusLocation(busId?: string) {
       }
     };
   }, [busId, accessToken, queryClient, setBusLocation, addBusPathPoint, clearBusPath, setSocketConnected]);
+
+  // Foreground recovery: Android may suspend/kill the websocket while the app
+  // is backgrounded. On return to the foreground, reconnect only if the socket
+  // is actually down — the 'connect' handler then re-joins the bus room and
+  // flips the status back to Live. A healthy socket is left untouched (no
+  // needless disconnect/reconnect churn).
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      const s = getSocket();
+      if (s && !s.connected) {
+        devLog('[SOCKET][PARENT] foreground recovery: reconnecting socket');
+        s.connect();
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   return query;
 }

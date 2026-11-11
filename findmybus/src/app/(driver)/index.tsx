@@ -29,6 +29,8 @@ export default function DriverDashboard() {
   }
 
   const handleStart = async () => {
+    if (currentTrip?.status === 'active') return;
+
     const { background } = await ensurePermissions();
 
     if (background) {

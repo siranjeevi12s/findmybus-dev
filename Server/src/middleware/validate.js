@@ -1,6 +1,10 @@
 const validate = (schema) => (req, res, next) => {
   try {
-    schema.parse(req.body);
+    // Assign the parsed result back so Zod's stripping of unknown keys and its
+    // transforms/defaults actually take effect. Without this, controllers
+    // received the raw body and could mass-assign fields the schema excludes
+    // (e.g. schoolId), defeating the allowlist.
+    req.body = schema.parse(req.body);
     next();
   } catch (error) {
     // zod v4 exposes .issues (.errors was removed); support both for safety

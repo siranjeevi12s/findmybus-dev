@@ -8,7 +8,7 @@ export interface QueuedLocation {
   latitude: number;
   longitude: number;
   accuracy?: number;
-  speed?: number;
+  // speed?: number;
   heading?: number;
   timestamp: number;
 }
