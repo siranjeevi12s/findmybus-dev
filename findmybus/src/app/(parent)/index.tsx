@@ -1,336 +1,214 @@
-import { useEffect, useState } from 'react';
-import { Linking, View, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import * as Location from 'expo-location';
+import { View, Text, ActivityIndicator } from 'react-native';
+import type { NativeSyntheticEvent } from 'react-native';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type CameraRef, type ViewStateChangeEvent } from '@maplibre/maplibre-react-native';
 import { useParentProfile } from '../../hooks/parent/useParentProfile';
 import { useLiveBusLocation } from '../../hooks/parent/useLiveBusLocation';
-import { useSmoothLocation } from '../../hooks/parent/useSmoothLocation';
 import { useParentLocation } from '../../hooks/parent/useParentLocation';
-import { useReverseGeocode } from '../../hooks/useReverseGeocode';
 import { useTripStore } from '../../store/tripStore';
-import { estimateETA, formatETA } from '../../utils/eta';
-import env from '../../env';
+import WaitingView from '../../components/parent/WaitingView';
+import InfoPanel from '../../components/parent/InfoPanel';
 
-// MapLibre is a native module - it crashes in Expo Go (MLRNCameraModule not found).
-// Lazy-require with fallback so the rest of the app (auth, profile) still works in Expo Go.
-// In a native dev build (`npx expo run:android`) this will load normally.
-let Map: any = null;
-let Camera: any = null;
-let Marker: any = null;
-let GeoJSONSource: any = null;
-let Layer: any = null;
-let isMapLibreAvailable = false;
-try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const mapLibre = require('@maplibre/maplibre-react-native');
-  Map = mapLibre.Map;
-  Camera = mapLibre.Camera;
-  Marker = mapLibre.Marker;
-  GeoJSONSource = mapLibre.GeoJSONSource;
-  Layer = mapLibre.Layer;
-  isMapLibreAvailable = true;
-} catch {
-  isMapLibreAvailable = false;
-}
+import {
+  STALE_LOCATION_MS,
+  ZOOM_DEFAULT,
+  ZOOM_MIN,
+  ZOOM_MAX,
+  ZOOM_STEP,
+  ZOOM_ANIMATION_MS,
+} from '../../components/parent/constants';
+
+const LiveMap = lazy(() => import('../../components/parent/LiveMap'));
 
 export default function ParentDashboard() {
   const { data: profile, isLoading: isProfileLoading } = useParentProfile();
-  const { location: parentLoc, permissionStatus } = useParentLocation();
-  
+  const { location: parentLoc } = useParentLocation();
+
   const busId = profile?.bus ? (typeof profile.bus === 'string' ? profile.bus : profile.bus._id) : undefined;
   useLiveBusLocation(busId);
-  
+
   const busLocation = useTripStore((state) => state.busLocation);
   const busPath = useTripStore((state) => state.busPath);
   const isConnected = useTripStore((state) => state.isConnectedToSocket);
-  const hasNetworkError = useTripStore((state) => state.hasNetworkError);
 
-  const smoothBusLoc = useSmoothLocation(busLocation?.latitude, busLocation?.longitude);
-  const { data: busPlaceName } = useReverseGeocode(busLocation?.latitude, busLocation?.longitude);
+  // Raw latest target only. Smooth per-frame motion lives inside <BusMarker/>,
+  // which subscribes to the store itself — this screen re-renders only when a
+  // new target arrives or trip/connection state changes.
+  const busLat = busLocation?.latitude;
+  const busLng = busLocation?.longitude;
+  const tripActive = !!busLocation?.active;
+  const hasLocation = tripActive && busLat != null && busLng != null;
 
-  // ETA: compute from parent location to bus location
-  const parentLat = parentLoc?.latitude;
-  const parentLng = parentLoc?.longitude;
-  const busLat = smoothBusLoc?.lat ?? busLocation?.latitude;
-  const busLng = smoothBusLoc?.lng ?? busLocation?.longitude;
-  const etaMinutes =
-    parentLat != null && parentLng != null && busLat != null && busLng != null
-      ? estimateETA(busLat, busLng, parentLat, parentLng)
-      : null;
+  const updatedAt = busLocation?.updatedAt;
+  // Staleness is evaluated relative to the last render (triggered when a new
+  // location arrives). We deliberately do NOT poll on a timer here: that used
+  // to re-render the entire dashboard every 30s solely to recompute isStale.
+  const isStale = useMemo(() => {
+    if (!updatedAt) return false;
+    const ts = Date.parse(String(updatedAt));
+    return Number.isFinite(ts) && Date.now() - ts > STALE_LOCATION_MS;
+  }, [updatedAt]);
 
-  // Map starts zoomed out, then flies in to the live bus location.
-  const [mapZoom, setMapZoom] = useState(4);
-  const [autoZoomDone, setAutoZoomDone] = useState(false);
+  // ── Manual camera controls ────────────────────────────────────────────────
+  // Zoom is declarative state so manual zoom survives the follow-camera stop
+  // that re-applies on every GPS fix (an imperative zoomTo would be reset).
+  const [zoom, setZoom] = useState(ZOOM_DEFAULT);
+  const zoomRef = useRef(ZOOM_DEFAULT);
+  const cameraRef = useRef<CameraRef>(null);
+  const locateBusyRef = useRef(false);
+  const [locateBusy, setLocateBusy] = useState(false);
+
+  // ── Independent map / marker movement ─────────────────────────────────────
+  // <BusMarker/> drives both the marker and the follow camera from one clock.
+  // Follow state is a REF, not React state: a manual gesture must flip it
+  // without re-rendering the map subtree, so panning/zooming stays native and
+  // stutter-free. The marker and route keep moving until the user recenters.
+  const isFollowingRef = useRef(true);
+  const prevTripIdRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
-    if (!busLocation?.active) {
-      // Trip ended — reset so the next trip starts zoomed out again.
-      setMapZoom(4);
-      setAutoZoomDone(false);
-      return;
+    if (busLat == null || busLng == null) return;
+    const tripChanged =
+      prevTripIdRef.current !== undefined &&
+      String(prevTripIdRef.current) !== String(busLocation?.tripId ?? '');
+    prevTripIdRef.current = busLocation?.tripId;
+    if (tripChanged) {
+      // A new trip always resumes following from its first fix.
+      isFollowingRef.current = true;
     }
-    if (smoothBusLoc && !autoZoomDone) {
-      const t = setTimeout(() => {
-        setMapZoom(14);
-        setAutoZoomDone(true);
-      }, 1000);
-      return () => clearTimeout(t);
+  }, [busLat, busLng, busLocation?.tripId]);
+
+  const handleUserRegionChange = useCallback(
+    (e: NativeSyntheticEvent<ViewStateChangeEvent>) => {
+      // Stop before the gesture completes so a GPS fix cannot pull the map
+      // back while the user is dragging or pinching. No state write: the ref
+      // flip must not re-render the map mid-gesture.
+      if (e.nativeEvent.userInteraction) {
+        isFollowingRef.current = false;
+      }
+    },
+    [],
+  );
+
+  const handleZoomIn = useCallback(() => {
+    const targetZoom = Math.min(ZOOM_MAX, zoomRef.current + ZOOM_STEP);
+    if (targetZoom === zoomRef.current) return;
+    zoomRef.current = targetZoom;
+    setZoom(targetZoom);
+    cameraRef.current?.zoomTo(targetZoom, { duration: ZOOM_ANIMATION_MS });
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    const targetZoom = Math.max(ZOOM_MIN, zoomRef.current - ZOOM_STEP);
+    if (targetZoom === zoomRef.current) return;
+    zoomRef.current = targetZoom;
+    setZoom(targetZoom);
+    cameraRef.current?.zoomTo(targetZoom, { duration: ZOOM_ANIMATION_MS });
+  }, []);
+
+  // "Find the bus" — recenters the camera on the bus's latest position.
+  // Useful after panning away or zooming; tracking data is untouched.
+  const handleLocate = useCallback(async () => {
+    if (locateBusyRef.current) return; // ignore rapid repeat presses
+    if (busLat == null || busLng == null) return;
+    locateBusyRef.current = true;
+    setLocateBusy(true);
+    try {
+      // Recenter on the bus and normalize zoom. The imperative camera methods
+      // are the only path that can correct a native zoom the user changed by
+      // pinching (React state and native camera can drift apart).
+      const targetZoom = Math.min(Math.max(zoom, 15), ZOOM_MAX);
+      isFollowingRef.current = true;
+      cameraRef.current?.easeTo({
+        center: [busLng, busLat],
+        zoom: targetZoom,
+        duration: ZOOM_ANIMATION_MS,
+        easing: 'ease',
+      });
+      if (targetZoom !== zoom) {
+        zoomRef.current = targetZoom;
+        setZoom(targetZoom);
+      }
+    } finally {
+      locateBusyRef.current = false;
+      setLocateBusy(false);
     }
-  }, [smoothBusLoc, busLocation?.active, autoZoomDone]);
+  }, [busLat, busLng, zoom]);
+
+  // Route polyline coordinates: validated historical GPS points + current raw
+  // position. Same data source that drives <BusMarker/>'s animation.
+  const routeCoordinates = useMemo(() => {
+    const isValid = (lat?: number, lng?: number): boolean =>
+      typeof lat === 'number' && typeof lng === 'number' &&
+      Number.isFinite(lat) && Number.isFinite(lng) &&
+      lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 &&
+      !(lat === 0 && lng === 0);
+    const coords: number[][] = busPath
+      .filter((p) => isValid(p.latitude, p.longitude))
+      .map((p) => [p.longitude as number, p.latitude as number]);
+    if (hasLocation && isValid(busLat, busLng)) {
+      coords.push([busLng, busLat]);
+    }
+    return coords;
+  }, [busPath, hasLocation, busLat, busLng]);
 
   if (isProfileLoading) {
     return (
-      <SafeAreaView edges={['top', 'bottom']} className="flex-1 justify-center items-center bg-gray-50">
+      <View className="flex-1 justify-center items-center bg-gray-50">
         <ActivityIndicator size="large" color="#3B82F6" />
-      </SafeAreaView>
-    );
-  }
-
-  if (permissionStatus === 'denied') {
-    return (
-      <SafeAreaView edges={['top', 'bottom']} className="flex-1 justify-center items-center bg-gray-50 p-6">
-        <Text className="text-xl font-bold text-gray-800 text-center">Location Permission Required</Text>
-        <Text className="text-gray-500 text-center mt-4">
-          Enable location access in Settings to see your position on the map.
-        </Text>
-        <TouchableOpacity
-          className="mt-6 h-12 px-6 bg-blue-600 rounded-lg flex-row items-center justify-center"
-          onPress={() => Linking.openSettings()}
-        >
-          <Text className="text-white font-semibold">Open Settings</Text>
-        </TouchableOpacity>
-      </SafeAreaView>
+      </View>
     );
   }
 
   if (!profile?.bus) {
     return (
-      <SafeAreaView edges={['top', 'bottom']} className="flex-1 justify-center items-center bg-gray-50 p-6">
+      <View className="flex-1 justify-center items-center bg-gray-50 p-6">
         <Text className="text-xl font-bold text-gray-800 text-center">No Bus Assigned</Text>
         <Text className="text-gray-500 text-center mt-2">
-          {profile?.student?.studentName || 'Student'} is not currently assigned to any bus route.
+          {profile?.student?.studentName} is not currently assigned to any bus route.
         </Text>
-      </SafeAreaView>
+      </View>
     );
   }
 
-  const hasLocation = busLocation?.active && smoothBusLoc;
-  const busSpeedKmh =
-    busLocation?.speed != null && Number.isFinite(busLocation.speed)
-      ? Math.max(0, Math.round(busLocation.speed * 3.6))
-      : 0;
-
   return (
-    <SafeAreaView edges={['top', 'bottom']} className="flex-1 bg-white">
-      {/* Network status banner */}
-      {!isConnected && (
-        <View className="w-full bg-amber-100 border border-amber-300 p-3 px-4 flex-row items-center justify-between">
-          <Text className="text-amber-800 text-sm font-medium">
-            {hasNetworkError ? 'No internet connection' : 'Connecting to bus…'}
-          </Text>
-          {!isConnected && <Text className="text-amber-600 text-xs">{hasNetworkError ? 'Check your connection' : 'Live updates may be delayed'}</Text>}
-        </View>
-      )}
-
+    <View className="flex-1 bg-white">
       {/* Map Area */}
-      <View className="flex-1 bg-slate-200" style={{ position: 'relative' }}>
-        {!isMapLibreAvailable ? (
-          <View className="flex-1 justify-center items-center p-6 bg-yellow-50">
-            <Text className="text-yellow-800 text-center font-bold">Map requires native build</Text>
-            <Text className="text-gray-600 text-center text-sm mt-2">
-              @maplibre/maplibre-react-native does not run in Expo Go.{'\n'}Run `npx expo run:android` to build a dev client with native code.{'\n'}Other features (login/profile) still work in Expo Go.
-            </Text>
-          </View>
-        ) : hasLocation ? (
-          <>
-            <Map
-              style={{ flex: 1 }}
-              mapStyle={env.MAPTILER_STYLE_URL}
-              logo={false}
-              attribution={true}
-            >
-              <Camera
-                zoom={mapZoom}
-                center={[smoothBusLoc.lng, smoothBusLoc.lat]}
-                easing="fly"
-                duration={autoZoomDone ? 1000 : 2500}
-              />
-
-              {/* Parent Location Marker */}
-              {parentLoc && (
-                <Marker
-                  id="parentMarker"
-                  lngLat={[parentLoc.longitude, parentLoc.latitude]}
-                >
-                  <View
-                    style={{
-                      width: 32,
-                      height: 32,
-                      backgroundColor: '#22C55E',
-                      borderRadius: 16,
-                      borderWidth: 2,
-                      borderColor: '#ffffff',
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <Text style={{ color: '#ffffff', fontSize: 10, fontWeight: 'bold' }}>ME</Text>
-                  </View>
-                </Marker>
-              )}
-
-              {/* Bus route breadcrumb trail — drawn from trip start to current position */}
-              {busPath.length >= 2 && (
-                <GeoJSONSource
-                  id="routeSource"
-                  data={{
-                    type: 'Feature',
-                    properties: {},
-                    geometry: {
-                      type: 'LineString',
-                      coordinates: busPath.map((p) => [p.longitude, p.latitude]),
-                    },
-                  }}
-                >
-                  <Layer
-                    id="routeLayer"
-                    type="line"
-                    style={{
-                      lineColor: '#3B82F6',
-                      lineWidth: 4,
-                      lineDasharray: [4, 2],
-                      lineOpacity: 0.8,
-                    }}
-                  />
-                </GeoJSONSource>
-              )}
-
-              {/* Smooth Bus Marker with Emoji. Keep children static-sized:
-                  the marker repositions every animation frame, so any text
-                  inside it flickers. The locality label lives in the fixed
-                  overlay chip below instead. */}
-              <Marker
-                id="busMarker"
-                lngLat={[smoothBusLoc.lng, smoothBusLoc.lat]}
-              >
-                <View
-                  style={{
-                    width: 48,
-                    height: 48,
-                    backgroundColor: '#ffffff',
-                    borderRadius: 24,
-                    borderWidth: 2,
-                    borderColor: '#3B82F6',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    shadowColor: '#000',
-                    shadowOpacity: 0.25,
-                    shadowRadius: 4,
-                    elevation: 5,
-                  }}
-                >
-                  <Text style={{ fontSize: 24 }}>🚌</Text>
-                </View>
-              </Marker>
-            </Map>
-          </>
+      <View className="flex-1 bg-slate-200">
+        {hasLocation ? (
+          <Suspense fallback={<View className="flex-1 bg-slate-200" />}>
+            <LiveMap
+            busLat={busLat}
+            busLng={busLng}
+            parentLoc={parentLoc}
+            routeCoordinates={routeCoordinates}
+            zoom={zoom}
+            isFollowingRef={isFollowingRef}
+            cameraRef={cameraRef}
+            onRegionWillChange={handleUserRegionChange}
+            onZoomIn={handleZoomIn}
+            onZoomOut={handleZoomOut}
+            onLocate={handleLocate}
+            locateBusy={locateBusy}
+          />
+          </Suspense>
+        ) : tripActive ? (
+          // Trip started but no GPS fix received yet — distinct from "no trip"
+          <WaitingView mode="waiting-fix" />
         ) : (
-          <View className="flex-1 justify-center items-center p-6">
-            <Text className="text-gray-500 text-center text-lg">
-              Bus is not currently on an active trip.
-            </Text>
-          </View>
-        )}
-
-        {/* Locality chip — fixed top-center overlay. Rendered outside <Map>
-            so it never re-mounts with marker frames (no blinking), and only
-            changes text when the rounded locality actually changes. */}
-        {isMapLibreAvailable && !!hasLocation && !!busPlaceName && (
-          <View className="absolute left-0 right-0 top-3 items-center" pointerEvents="none">
-            <View className="bg-slate-900 rounded-full px-4 py-2 shadow-xl border border-slate-700 flex-row items-center">
-              <Text className="text-white font-bold text-sm">📍 {busPlaceName.split(',')[0]}</Text>
-            </View>
-          </View>
-        )}
-
-        {/* Zoom controls overlay (must sit outside <Map> — plain Views
-            inside the native map do not lay out reliably) */}
-        {isMapLibreAvailable && !!hasLocation && (
-          <View className="absolute right-3 top-3 flex-col gap-2">
-            <TouchableOpacity
-              className="w-10 h-10 bg-white rounded-full justify-center items-center shadow-lg border border-gray-200"
-              onPress={() => setMapZoom(14)}
-            >
-              <Text className="text-lg">◎</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              className="w-10 h-10 bg-white rounded-full justify-center items-center shadow-lg border border-gray-200"
-              onPress={() => setMapZoom((z) => Math.max(2, z - 2))}
-            >
-              <Text className="text-xl font-bold text-gray-700">−</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              className="w-10 h-10 bg-white rounded-full justify-center items-center shadow-lg border border-gray-200"
-              onPress={() => setMapZoom((z) => Math.min(18, z + 2))}
-            >
-              <Text className="text-xl font-bold text-gray-700">+</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {isMapLibreAvailable && !!hasLocation && (
-          <View className="absolute bottom-4 left-4 right-4 items-center" pointerEvents="none">
-            <View className="flex-row items-center rounded-2xl border border-slate-700 bg-slate-950/90 px-5 py-3 shadow-xl">
-              <Text className="mr-2 text-xs font-semibold uppercase tracking-widest text-slate-400">
-                Bus speed
-              </Text>
-              <Text className="text-2xl font-bold text-white">{busSpeedKmh}</Text>
-              <Text className="ml-1 text-sm font-semibold text-slate-300">km/h</Text>
-            </View>
-          </View>
+          <WaitingView mode="no-trip" />
         )}
       </View>
 
-      {/* Info Panel Bottom */}
-      <View className="bg-white p-5 rounded-t-3xl shadow-xl -mt-6">
-        <View className="absolute right-5 top-5 flex-row items-center">
-          <View className={`w-3 h-3 rounded-full mr-2 ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-          <Text className="text-xs text-gray-500">{isConnected ? 'Live' : 'Connecting...'}</Text>
-        </View>
-
-        <Text className="text-gray-500 text-sm font-medium">Student</Text>
-        <Text className="text-gray-900 text-xl font-bold mb-4">{profile.student?.studentName || 'Student'}</Text>
-        
-        <View className="flex-row justify-between mb-2">
-          <View className="flex-1 mr-2">
-            <Text className="text-gray-500 text-xs">Bus Number</Text>
-            <Text className="text-gray-900 font-bold text-lg">
-              {typeof profile.bus !== 'string' ? profile.bus.busNumber : 'Unknown'}
-            </Text>
-            {busPlaceName && (
-              <Text className="text-gray-500 text-xs mt-1" numberOfLines={2}>
-                📍 {busPlaceName}
-              </Text>
-            )}
-            {etaMinutes != null && busLocation?.active && (
-              <View className="mt-1">
-                <Text className="text-blue-600 text-xs font-semibold">
-                  🚌 {formatETA(etaMinutes)} away
-                </Text>
-              </View>
-            )}
-          </View>
-          
-          {profile.driver && (
-            <View className="items-end">
-              <Text className="text-gray-500 text-xs">Driver</Text>
-              <Text className="text-gray-900 font-bold text-lg">
-                {profile.driver.firstName} {profile.driver.lastName}
-              </Text>
-            </View>
-          )}
-        </View>
-      </View>
-    </SafeAreaView>
+      <InfoPanel
+        studentName={profile.student?.studentName}
+        busNumber={typeof profile.bus !== 'string' ? profile.bus.busNumber : undefined}
+        driverName={
+          profile.driver ? `${profile.driver.firstName} ${profile.driver.lastName}` : undefined
+        }
+        isConnected={isConnected}
+        isStale={isStale}
+      />
+    </View>
   );
 }

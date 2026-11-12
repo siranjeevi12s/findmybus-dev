@@ -1,10 +1,13 @@
 const Student = require('../models/Student');
 const Bus = require('../models/Bus');
+const { escapeRegex } = require('../utils/escapeRegex');
 
 /**
  * Create a new student
  */
 const createStudent = async (schoolId, studentData) => {
+  // Treat an empty-string bus selection as "unassigned" (clients may send '')
+  if (studentData.busId === '') studentData.busId = null;
   const { studentId, busId } = studentData;
 
   // 1. Verify studentId is unique within this school
@@ -49,6 +52,7 @@ const getStudents = async (schoolId, { page = 1, limit = 10, search = '' }) => {
   };
 
   if (search) {
+    search = escapeRegex(search);
     query.$or = [
       { studentName: { $regex: search, $options: 'i' } },
       { studentId: { $regex: search, $options: 'i' } },
@@ -106,6 +110,8 @@ const updateStudent = async (schoolId, studentId, updateData) => {
     throw err;
   }
 
+  // Treat an empty-string bus selection as "unassigned" (clients may send '')
+  if (updateData.busId === '') updateData.busId = null;
   const { studentId: newStudentId, busId } = updateData;
 
   // Check studentId uniqueness if updated

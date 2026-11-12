@@ -18,6 +18,7 @@ const schoolSchema = new mongoose.Schema(
     passwordHash: {
       type: String,
       required: true,
+      select: false,
     },
     emailVerified: {
       type: Boolean,

@@ -1,10 +1,19 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import { AppState } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { parentApi } from '../../api/parentApi';
 import { useTripStore } from '../../store/tripStore';
 import { useAuthStore } from '../../store/authStore';
-import { connectSocket, joinBusRoom, leaveBusRoom, getSocket, setActiveBusId } from '../../services/socketService';
+import {
+  connectSocket,
+  attachSocketListeners,
+  joinBusRoom,
+  leaveBusRoom,
+  getSocket,
+  setActiveBusId,
+} from '../../services/socketService';
 import type { BusLocation, BusLocationHistory } from '../../types';
+import { devLog, devWarn } from '../../utils/log';
 
 const MIN_DISTANCE_METERS = 5;
 
@@ -27,25 +36,41 @@ export function useLiveBusLocation(busId?: string) {
   const addBusPathPoint = useTripStore((state) => state.addBusPathPoint);
   const clearBusPath = useTripStore((state) => state.clearBusPath);
   const setSocketConnected = useTripStore((state) => state.setSocketConnected);
+  const isConnected = useTripStore((state) => state.isConnectedToSocket);
 
-  // Initial fetch — current location only. Do NOT seed breadcrumb path
-  // from history; the line should only appear once the driver starts the trip.
+  // Track whether socket listeners are already attached to prevent duplicates
+  const listenersRef = useRef(false);
+
+  // Initial fetch — current location only
   const query = useQuery({
     queryKey: ['busLocation', busId],
     queryFn: async () => {
-      const locRes = await parentApi.getBusLocation();
-      if (!locRes.data.success) throw new Error(locRes.data.message);
-      const loc = locRes.data.data;
+      const { data } = await parentApi.getBusLocation();
+      if (!data.success) throw new Error(data.message);
+      const loc = data.data;
       setBusLocation(loc);
-
-      // Start with an empty path — lines appear only after trip starts.
-      setBusPath([]);
-      queryClient.setQueryData(['busPath', busId], []);
-
       return loc;
     },
     enabled: !!busId,
-    refetchInterval: 30000, // Fallback polling if socket fails
+    // Only poll when the socket is down. When connected, real-time location
+    // updates arrive via socket and REST polling is redundant (it would
+    // re-fetch the same data every 30s and force store writes / re-renders).
+    refetchInterval: () => (isConnected ? false : 30000),
+  });
+
+  // Route history for the active trip — seeds the breadcrumb polyline when a
+  // parent opens the app mid-trip. Live socket events extend it afterwards,
+  // and trip:started invalidates it so a new trip refetches (empty) history.
+  useQuery({
+    queryKey: ['busPath', busId],
+    queryFn: async () => {
+      const { data } = await parentApi.getTripPath();
+      if (!data.success) throw new Error(data.message);
+      const points = Array.isArray(data.data) ? data.data : [];
+      setBusPath(points);
+      return points;
+    },
+    enabled: !!busId,
   });
 
   // Socket setup
@@ -53,124 +78,161 @@ export function useLiveBusLocation(busId?: string) {
     if (!busId || !accessToken) return;
 
     setActiveBusId(busId);
-
     const socket = connectSocket(accessToken);
 
-    socket.on('connect', () => {
-      setSocketConnected(true);
-      joinBusRoom(busId);
-    });
-
-    socket.on('disconnect', () => {
-      setSocketConnected(false);
-    });
-
-    socket.on('location:update', (data: BusLocation) => {
-      const newLoc: BusLocation = {
-        active: true,
-        tripId: data.tripId,
-        latitude: data.latitude,
-        longitude: data.longitude,
-        accuracy: data.accuracy,
-        speed: data.speed,
-        heading: data.heading,
-        updatedAt: data.updatedAt,
-      };
-      setBusLocation(newLoc);
-      queryClient.setQueryData(['busLocation', busId], newLoc);
-
-      // Append to breadcrumb trail if we have a last point and it moved enough
-      const last = queryClient.getQueryData<BusLocationHistory[]>([
-        'busPath',
-        busId,
-      ]);
-      if (last && last.length > 0) {
-        const prev = last[last.length - 1];
-        const dist = haversineMeters(
-          prev.latitude,
-          prev.longitude,
-          newLoc.latitude ?? 0,
-          newLoc.longitude ?? 0
-        );
-        if (dist >= MIN_DISTANCE_METERS) {
-          addBusPathPoint({
-            latitude: newLoc.latitude ?? 0,
-            longitude: newLoc.longitude ?? 0,
-            accuracy: newLoc.accuracy,
-            speed: newLoc.speed,
-            heading: newLoc.heading,
-            timestamp: Date.now(),
-          });
-          queryClient.setQueryData(['busPath', busId], [
-            ...last,
-            {
-              latitude: newLoc.latitude ?? 0,
-              longitude: newLoc.longitude ?? 0,
-              accuracy: newLoc.accuracy,
-              speed: newLoc.speed,
-              heading: newLoc.heading,
-              timestamp: Date.now(),
-            },
-          ]);
-        }
-      } else {
-        // Seed the path with the first point if empty
-        addBusPathPoint({
-          latitude: newLoc.latitude ?? 0,
-          longitude: newLoc.longitude ?? 0,
-          accuracy: newLoc.accuracy,
-          speed: newLoc.speed,
-          heading: newLoc.heading,
-          timestamp: Date.now(),
-        });
-        queryClient.setQueryData(['busPath', busId], [
-          {
-            latitude: newLoc.latitude ?? 0,
-            longitude: newLoc.longitude ?? 0,
-            accuracy: newLoc.accuracy,
-            speed: newLoc.speed,
-            heading: newLoc.heading,
-            timestamp: Date.now(),
-          },
-        ]);
-      }
-    });
-
-    socket.on('trip:started', (data: { tripId: string; busId: string }) => {
-      queryClient.invalidateQueries({ queryKey: ['busLocation', busId] });
-      queryClient.invalidateQueries({ queryKey: ['activeTrip'] });
-      clearBusPath();
-    });
-
-    socket.on('trip:ended', () => {
-      const inactive = { active: false };
-      setBusLocation(inactive);
-      queryClient.setQueryData(['busLocation', busId], inactive);
-      queryClient.invalidateQueries({ queryKey: ['activeTrip'] });
-      // Clear breadcrumb path when trip ends — lines only appear during an active trip.
-      clearBusPath();
-      queryClient.setQueryData(['busPath', busId], []);
-    });
-
-    // connectSocket() reuses an already-connected socket, in which case the
-    // 'connect' event above will never fire again — so join the room now.
+    // If already connected, join the room immediately
     if (socket.connected) {
       setSocketConnected(true);
       joinBusRoom(busId);
     }
 
+    // Attach listeners only once per socket instance (prevents duplicates on remount)
+    if (!listenersRef.current) {
+      listenersRef.current = true;
+      const cleanup = attachSocketListeners(
+        () => {
+          setSocketConnected(true);
+          joinBusRoom(busId);
+        },
+        () => {
+          setSocketConnected(false);
+        },
+        (data: BusLocation & { timestamp?: number | string }) => {
+          // Ignore late events belonging to a different trip (e.g. an
+          // in-flight update from a trip that just ended) so the parent never
+          // renders stale coordinates on a new trip.
+          const currentTripId = useTripStore.getState().busLocation?.tripId;
+          if (
+            data.tripId &&
+            currentTripId &&
+            String(data.tripId) !== String(currentTripId)
+          ) {
+            devWarn(
+              `[GPS][PARENT] ignored update from trip ${data.tripId} (current trip ${currentTripId})`,
+            );
+            return;
+          }
+
+          const newLoc: BusLocation = {
+            active: true,
+            tripId: data.tripId,
+            latitude: data.latitude,
+            longitude: data.longitude,
+            accuracy: data.accuracy,
+            speed: data.speed,
+            heading: data.heading,
+            // Server socket payload historically used `timestamp`; REST uses
+            // `updatedAt`. Accept both so either backend version works.
+            updatedAt: (data.updatedAt ?? data.timestamp) as string | undefined,
+          };
+          setBusLocation(newLoc);
+          queryClient.setQueryData(['busLocation', busId], newLoc);
+          devLog(
+            `[GPS][PARENT] location:update tripId=${newLoc.tripId} lat=${newLoc.latitude?.toFixed(3)} lng=${newLoc.longitude?.toFixed(3)}`,
+          );
+
+          // Append to breadcrumb trail only after coordinate validation
+          // (finite, in-range, not null-island) — narrows to number below.
+          const rawLat = newLoc.latitude;
+          const rawLng = newLoc.longitude;
+          if (
+            typeof rawLat === 'number' && Number.isFinite(rawLat) && Math.abs(rawLat) <= 90 &&
+            typeof rawLng === 'number' && Number.isFinite(rawLng) && Math.abs(rawLng) <= 180 &&
+            !(rawLat === 0 && rawLng === 0)
+          ) {
+            const last = queryClient.getQueryData<BusLocationHistory[]>([
+              'busPath',
+              busId,
+            ]);
+
+            let shouldAdd = true;
+            if (last && last.length > 0) {
+              const prev = last[last.length - 1];
+              const dist = haversineMeters(
+                prev.latitude,
+                prev.longitude,
+                rawLat,
+                rawLng,
+              );
+              if (dist < MIN_DISTANCE_METERS) {
+                shouldAdd = false;
+              }
+            }
+
+            if (shouldAdd) {
+              const point: BusLocationHistory = {
+                latitude: rawLat,
+                longitude: rawLng,
+                accuracy: newLoc.accuracy,
+                speed: newLoc.speed,
+                heading: newLoc.heading,
+                timestamp: Date.now(),
+              };
+              addBusPathPoint(point);
+              queryClient.setQueryData(['busPath', busId], [
+                ...(last ?? []),
+                point,
+              ]);
+            }
+          }
+        },
+        (data: { tripId: string; busId: string }) => {
+          devLog(
+            `[SOCKET][PARENT] trip:started tripId=${data.tripId} busId=${data.busId} — switching to live tracking`,
+          );
+          // Show the "trip started" state immediately, even before the first
+          // GPS fix arrives; REST refetch then fills latest coordinates.
+          setBusLocation({ active: true, tripId: data.tripId });
+          queryClient.invalidateQueries({ queryKey: ['busLocation', busId] });
+          queryClient.invalidateQueries({ queryKey: ['activeTrip'] });
+          clearBusPath();
+          // Refetch route history for the NEW trip (empty at start) so points
+          // from the previous trip can never bleed into this one.
+          queryClient.invalidateQueries({ queryKey: ['busPath', busId] });
+        },
+        (data: { tripId?: string }) => {
+          devLog(`[SOCKET][PARENT] trip:ended tripId=${data?.tripId} — returning to idle state`);
+          const inactive = { active: false };
+          setBusLocation(inactive);
+          queryClient.setQueryData(['busLocation', busId], inactive);
+          queryClient.invalidateQueries({ queryKey: ['activeTrip'] });
+          clearBusPath();
+          queryClient.setQueryData(['busPath', busId], []);
+        },
+      );
+
+      return () => {
+        cleanup();
+        listenersRef.current = false;
+        leaveBusRoom();
+      };
+    }
+
     return () => {
       const s = getSocket();
-      if (s) {
-        s.off('connect');
-        s.off('disconnect');
-        s.off('location:update');
-        s.off('trip:started');
-        s.off('trip:ended');
+      const authToken = (s?.auth as { token?: string } | undefined)?.token;
+      if (s && s.connected && authToken === accessToken) {
+        leaveBusRoom();
       }
-      leaveBusRoom();
     };
-  }, [busId, accessToken, queryClient, setBusLocation, setBusPath, addBusPathPoint, clearBusPath, setSocketConnected]);
+  }, [busId, accessToken, queryClient, setBusLocation, addBusPathPoint, clearBusPath, setSocketConnected]);
+
+  // Foreground recovery: Android may suspend/kill the websocket while the app
+  // is backgrounded. On return to the foreground, reconnect only if the socket
+  // is actually down — the 'connect' handler then re-joins the bus room and
+  // flips the status back to Live. A healthy socket is left untouched (no
+  // needless disconnect/reconnect churn).
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      const s = getSocket();
+      if (s && !s.connected) {
+        devLog('[SOCKET][PARENT] foreground recovery: reconnecting socket');
+        s.connect();
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   return query;
 }

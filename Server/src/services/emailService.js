@@ -39,7 +39,10 @@ const sendOtpEmail = async (email, otp) => {
   };
 
   try {
-    console.log(`[OTP_CODE_LOG] Code ${otp} sent to ${email}`);
+    // Never log OTP secrets or recipient PII in production logs.
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[OTP_CODE_LOG] Code ${otp} sent to ${email}`);
+    }
     await transporter.sendMail(mailOptions);
     return true;
   } catch (error) {

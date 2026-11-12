@@ -28,6 +28,7 @@ const driverSchema = new mongoose.Schema(
       required: true,
       trim: true,
       lowercase: true,
+      index: true,
     },
     licenseNumber: {
       type: String,

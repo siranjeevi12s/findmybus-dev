@@ -10,7 +10,7 @@ const createStudentSchema = z.object({
   parentName: z.string().min(1, 'Parent name is required').trim(),
   parentEmail: z.string().email('Invalid parent email address').toLowerCase().trim(),
   parentPhone: z.string().min(8, 'Parent phone number must be at least 8 digits').trim(),
-  busId: z.string().regex(objectIdRegex, 'Invalid Bus ID').nullable().optional(),
+  busId: z.preprocess((v) => (v === '' ? null : v), z.string().regex(objectIdRegex, 'Invalid Bus ID').nullable().optional()),
 });
 
 const updateStudentSchema = z.object({
@@ -21,7 +21,7 @@ const updateStudentSchema = z.object({
   parentName: z.string().min(1, 'Parent name is required').trim().optional(),
   parentEmail: z.string().email('Invalid parent email address').toLowerCase().trim().optional(),
   parentPhone: z.string().min(8, 'Parent phone number must be at least 8 digits').trim().optional(),
-  busId: z.string().regex(objectIdRegex, 'Invalid Bus ID').nullable().optional(),
+  busId: z.preprocess((v) => (v === '' ? null : v), z.string().regex(objectIdRegex, 'Invalid Bus ID').nullable().optional()),
   status: z.enum(['active', 'inactive']).optional(),
 });
 

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Student Registered - FindMyBus</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f0fdf4;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .card {
+      background: #ffffff;
+      padding: 40px;
+      border-radius: 16px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+      text-align: center;
+      max-width: 420px;
+      width: 100%;
+    }
+    .check {
+      width: 60px;
+      height: 60px;
+      background: #bbf7d0;
+      color: #16a34a;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 30px;
+      margin: 0 auto 20px;
+    }
+    h1 { color: #111827; font-size: 26px; margin-bottom: 8px; }
+    p.subtitle { color: #6b7280; font-size: 14px; margin-bottom: 24px; line-height: 1.5; }
+    .detail {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 24px;
+      text-align: left;
+    }
+    .detail-row {
+      font-size: 14px;
+      color: #374151;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .detail-row:last-child { margin-bottom: 0; }
+    .detail-row .label { color: #6b7280; font-weight: 600; }
+    .detail-row .value { font-weight: 700; color: #111827; }
+    .btn {
+      display: inline-block;
+      padding: 12px 24px;
+      background: #3b82f6;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .btn:hover { background: #2563eb; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="check">&#10004;</div>
+    <h1>Student Registered!</h1>
+    <p class="subtitle" id="successMsg">The student profile has been created successfully.</p>
+
+    <div class="detail">
+      <div class="detail-row">
+        <span class="label">Registered School</span>
+        <span class="value" id="schoolName">siranjeevi</span>
+      </div>
+      <div class="detail-row">
+        <span class="label">School Email</span>
+        <span class="value" id="schoolEmail">siranjeevi12s2@gmail.com</span>
+      </div>
+      <div class="detail-row">
+        <span class="label">Parent Email</span>
+        <span class="value" id="parentEmail"></span>
+      </div>
+    </div>
+
+    <a href="login.html" class="btn">Go to Login</a>
+  </div>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const parentEmail = urlParams.get('email') || '';
+    const schoolName = urlParams.get('school') || 'siranjeevi';
+    const schoolEmail = 'siranjeevi12s2@gmail.com';
+
+    document.getElementById('schoolName').textContent = schoolName;
+    document.getElementById('schoolEmail').textContent = schoolEmail;
+    document.getElementById('parentEmail').textContent = parentEmail;
+
+    const successMsg = document.getElementById('successMsg');
+    if (parentEmail) {
+      successMsg.textContent = `Student profile for ${parentEmail} has been created successfully under school "${schoolName}".`;
+    }
+  </script>
+</body>
+</html>

@@ -16,7 +16,15 @@ export const driverApi = {
 
   updateLocation: (
     tripId: string,
-    payload: { latitude: number; longitude: number; accuracy?: number; speed?: number; heading?: number }
+    payload: {
+      latitude: number;
+      longitude: number;
+      accuracy?: number;
+      speed?: number;
+      heading?: number;
+      /** Capture time (ms epoch). Server stores it for freshness checks. */
+      timestamp?: number;
+    }
   ) =>
     axiosClient.post<ApiResponse<Trip>>(`/mobile/driver/trips/${tripId}/location`, payload),
 

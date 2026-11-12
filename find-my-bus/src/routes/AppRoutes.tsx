@@ -8,6 +8,7 @@ import Box from '@mui/material/Box';
 import Login from '../pages/auth/Login';
 import Register from '../pages/auth/Register';
 import VerifyOtp from '../pages/auth/VerifyOtp';
+import RegisterStudent from '../pages/auth/RegisterStudent';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import DashboardHome from '../pages/dashboard/DashboardHome';
 import BusesPage from '../pages/buses/BusesPage';
@@ -72,6 +73,7 @@ const AppRoutes = () => {
           </PublicRoute>
         }
       />
+      <Route path="/register-student" element={<RegisterStudent />} />
 
       {/* Protected dashboard routes */}
       <Route

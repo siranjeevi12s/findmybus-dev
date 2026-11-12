@@ -1,7 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { AxiosError } from 'axios';
+import * as Location from 'expo-location';
 import { driverApi } from '../../api/driverApi';
 import { useTripStore } from '../../store/tripStore';
 import { startLocationTracking, stopLocationTracking } from '../../services/locationService';
+import { devLog } from '../../utils/log';
 
 export function useStartTrip() {
   const queryClient = useQueryClient();
@@ -14,28 +17,53 @@ export function useStartTrip() {
       const { data } = await driverApi.startTrip();
       if (!data.success) throw new Error(data.message);
       const trip = data.data;
-      // Do not await native tracking inside mutation — fire-and-forget so
-      // button responds immediately to API result. Failures are handled below.
-      void startLocationTracking(trip._id);
+      devLog(`[SOCKET][DRIVER] trip started via REST tripId=${trip._id}`);
+
+      // Start background tracking without blocking the mutation resolution.
+      startLocationTracking(trip._id).catch(() => {});
+
+      // Post the current position immediately so parents see the bus the moment
+      // the trip starts. The GPS fetch runs concurrently with background-tracking
+      // startup (launched above), shortening the critical path to
+      // startTrip → GPS → updateLocation.
+      try {
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+        const { latitude, longitude, accuracy, speed, heading } = pos.coords;
+        await driverApi.updateLocation(trip._id, {
+          latitude,
+          longitude,
+          accuracy: accuracy ?? undefined,
+          speed: speed ?? undefined,
+          heading: heading ?? undefined,
+        });
+        devLog(
+          `[GPS][DRIVER] initial fix posted tripId=${trip._id} lat=${latitude.toFixed(3)} lng=${longitude.toFixed(3)}`,
+        );
+      } catch (e) {
+        // Non-fatal: background tracking will still deliver fixes later.
+        console.warn(
+          '[GPS][DRIVER] initial fix failed (background task will retry):',
+          (e as Error)?.message ?? e,
+        );
+      }
       return trip;
-    },
-    onMutate: async () => {
-      await queryClient.cancelQueries({ queryKey: ['currentTrip'] });
-      const snapshot = queryClient.getQueryData(['currentTrip']);
-      // Optimistically mark active before server round-trip.
-      setTrackingStatus('active');
-      return { snapshot };
     },
     onSuccess: (trip) => {
       setCurrentTrip(trip);
       setTrackingStatus('active');
       queryClient.setQueryData(['currentTrip'], trip);
-      queryClient.invalidateQueries({ queryKey: ['currentTrip'] });
     },
-    onError: async (error, _trip, context) => {
+    onError: async (error) => {
       setTrackingStatus('error');
-      queryClient.setQueryData(['currentTrip'], context?.snapshot);
+      // Tracking may have partially started — make sure nothing is left running.
       await stopLocationTracking().catch(() => {});
+      // A 409 means a trip is already active server-side (duplicate start guard).
+      // Reconcile to the existing trip instead of surfacing a spurious error.
+      if ((error as AxiosError)?.response?.status === 409) {
+        queryClient.invalidateQueries({ queryKey: ['currentTrip'] });
+        return;
+      }
+      // The server may still hold an active trip; refetching reconciles the UI.
       queryClient.invalidateQueries({ queryKey: ['currentTrip'] });
       console.error('Failed to start trip:', error);
     },

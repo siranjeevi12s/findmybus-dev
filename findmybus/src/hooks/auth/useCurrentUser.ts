@@ -4,7 +4,6 @@ import { useAuthStore } from '../../store/authStore';
 
 export function useCurrentUser() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  const role = useAuthStore((state) => state.role);
 
   return useQuery({
     queryKey: ['currentUser'],

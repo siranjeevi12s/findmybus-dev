@@ -1,4 +1,5 @@
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const School = require('../models/School');
 const Otp = require('../models/Otp');
 const RefreshToken = require('../models/RefreshToken');
@@ -8,6 +9,14 @@ const {
   generateRefreshToken,
   verifyRefreshToken,
 } = require('../utils/jwt');
+
+// Refresh tokens are stored as a SHA-256 hash so a database read does not yield
+// usable bearer tokens. The raw JWT is returned to the client only once.
+const hashToken = (token) =>
+  crypto.createHash('sha256').update(String(token)).digest('hex');
+
+// Cryptographically secure 6-digit OTP (Math.random is predictable).
+const generateOtpCode = () => crypto.randomInt(100000, 999999).toString();
 
 /**
  * Register a new school (generates OTP)
@@ -25,7 +34,7 @@ const registerSchool = async ({ name, email, password }) => {
   await Otp.deleteMany({ email });
 
   // Generate 6-digit OTP
-  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+  const otpCode = generateOtpCode();
   const otpHash = await bcrypt.hash(otpCode, 10);
   const passwordHash = await bcrypt.hash(password, 10);
 
@@ -58,24 +67,25 @@ const registerSchool = async ({ name, email, password }) => {
  * Verify email OTP and create School record
  */
 const verifyOtp = async ({ email, otp }) => {
-  const otpRecord = await Otp.findOne({ email });
+  // Atomically increment attempts only while under the cap, so concurrent
+  // requests cannot race past the 5-attempt limit (read-modify-write could).
+  const otpRecord = await Otp.findOneAndUpdate(
+    { email, attempts: { $lt: 5 } },
+    { $inc: { attempts: 1 } },
+    { new: true }
+  );
   if (!otpRecord) {
+    const existing = await Otp.findOne({ email });
+    if (existing && existing.attempts >= 5) {
+      await Otp.deleteOne({ email });
+      const err = new Error('Too many failed verification attempts. Please register again.');
+      err.statusCode = 400;
+      throw err;
+    }
     const err = new Error('Verification code not found or expired');
     err.statusCode = 400;
     throw err;
   }
-
-  // Check attempt limit (max 5)
-  if (otpRecord.attempts >= 5) {
-    await Otp.deleteOne({ email });
-    const err = new Error('Too many failed verification attempts. Please register again.');
-    err.statusCode = 400;
-    throw err;
-  }
-
-  // Increment attempts
-  otpRecord.attempts += 1;
-  await otpRecord.save();
 
   // Verify OTP code
   const isMatch = await bcrypt.compare(otp, otpRecord.otpHash);
@@ -105,7 +115,7 @@ const verifyOtp = async ({ email, otp }) => {
   // Store refresh token
   const rTokenDoc = new RefreshToken({
     schoolId: school._id,
-    token: refreshToken,
+    token: hashToken(refreshToken),
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
   });
   await rTokenDoc.save();
@@ -137,7 +147,7 @@ const resendOtp = async ({ email }) => {
   }
 
   // Generate new OTP
-  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+  const otpCode = generateOtpCode();
   const otpHash = await bcrypt.hash(otpCode, 10);
 
   // Update record
@@ -160,7 +170,7 @@ const resendOtp = async ({ email }) => {
  * Login administrator
  */
 const loginSchool = async ({ email, password }) => {
-  const school = await School.findOne({ email, status: 'active' });
+  const school = await School.findOne({ email, status: 'active' }).select('+passwordHash');
   if (!school) {
     const err = new Error('Invalid email or password');
     err.statusCode = 401;
@@ -181,7 +191,7 @@ const loginSchool = async ({ email, password }) => {
   // Store refresh token
   const rTokenDoc = new RefreshToken({
     schoolId: school._id,
-    token: refreshToken,
+    token: hashToken(refreshToken),
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
   });
   await rTokenDoc.save();
@@ -204,7 +214,7 @@ const rotateToken = async (token) => {
     throw err;
   }
 
-  const tokenDoc = await RefreshToken.findOne({ token });
+  const tokenDoc = await RefreshToken.findOne({ token: hashToken(token) });
   if (!tokenDoc) {
     const err = new Error('Session expired or revoked');
     err.statusCode = 401;
@@ -227,7 +237,7 @@ const rotateToken = async (token) => {
  * Invalidate refresh token on logout
  */
 const logoutSchool = async (token) => {
-  await RefreshToken.deleteOne({ token });
+  await RefreshToken.deleteOne({ token: hashToken(token) });
   return { message: 'Logged out successfully' };
 };
 

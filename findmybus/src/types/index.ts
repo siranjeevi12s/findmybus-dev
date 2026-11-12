@@ -135,7 +135,6 @@ export interface ParentProfile {
   bus?: Bus | null;
   driver?: Driver | null;
   school: School;
-  // studentname: string; // Added to match the updated code in index.tsx
 }
 
 // ─── API Response ─────────────────────────────────────────────────────────────

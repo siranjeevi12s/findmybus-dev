@@ -38,6 +38,7 @@ const studentSchema = new mongoose.Schema(
       required: true,
       trim: true,
       lowercase: true,
+      index: true,
     },
     parentPhone: {
       type: String,

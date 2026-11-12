@@ -1,6 +1,7 @@
 const Bus = require('../models/Bus');
 const BusDriverAssignment = require('../models/BusDriverAssignment');
 const Student = require('../models/Student');
+const { escapeRegex } = require('../utils/escapeRegex');
 
 /**
  * Create a new bus
@@ -41,6 +42,7 @@ const getBuses = async (schoolId, { page = 1, limit = 10, search = '' }) => {
   };
 
   if (search) {
+    search = escapeRegex(search);
     query.$or = [
       { busNumber: { $regex: search, $options: 'i' } },
       { registrationNumber: { $regex: search, $options: 'i' } },

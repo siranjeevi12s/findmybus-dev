@@ -1,8 +1,12 @@
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_for_find_my_bus_app';
-const JWT_REFRESH_SECRET =
-  process.env.JWT_REFRESH_SECRET || 'fallback_refresh_secret_key_for_find_my_bus_app';
+// Fail fast on misconfiguration: a guessable fallback secret would silently
+// allow token forgery in any deployment that forgets to set the env vars.
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
+if (!JWT_SECRET || !JWT_REFRESH_SECRET) {
+  throw new Error('JWT_SECRET and JWT_REFRESH_SECRET must be set in the environment');
+}
 
 /**
  * Generate short-lived access token for mobile users (drivers/parents).
@@ -22,7 +26,7 @@ const generateMobileRefreshToken = (userId, role) => {
 
 const verifyMobileAccessToken = (token) => {
   try {
-    return jwt.verify(token, JWT_SECRET);
+    return jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
   } catch {
     return null;
   }
@@ -30,7 +34,7 @@ const verifyMobileAccessToken = (token) => {
 
 const verifyMobileRefreshToken = (token) => {
   try {
-    return jwt.verify(token, JWT_REFRESH_SECRET);
+    return jwt.verify(token, JWT_REFRESH_SECRET, { algorithms: ['HS256'] });
   } catch {
     return null;
   }

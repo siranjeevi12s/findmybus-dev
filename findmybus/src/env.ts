@@ -1,35 +1,62 @@
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
-// const REMOTE_ORIGIN = 'https://app-find-my-bus-gchga4hcdce2evdw.eastasia-01.azurewebsites.net';
-const REMOTE_ORIGIN = 'http://10.106.220.145:5001';
-const ENV = {
-  development: {
-    API_BASE_URL: `${REMOTE_ORIGIN}/api`,
-    SOCKET_URL: REMOTE_ORIGIN,
-    MAPTILER_API_KEY: 'avboMAhwkXpDoiOqq2oD',
-    MAPTILER_STYLE_URL: 'https://api.maptiler.com/maps/streets-v2/style.json?key=avboMAhwkXpDoiOqq2oD',
-  },
-  staging: {
-    API_BASE_URL: `${REMOTE_ORIGIN}/api`,
-    SOCKET_URL: REMOTE_ORIGIN,
-    MAPTILER_API_KEY: 'avboMAhwkXpDoiOqq2oD',
-    MAPTILER_STYLE_URL: 'https://api.maptiler.com/maps/streets-v2/style.json?key=avboMAhwkXpDoiOqq2oD',
-  },
-  production: {
-    API_BASE_URL: `${REMOTE_ORIGIN}/api`,
-    SOCKET_URL: REMOTE_ORIGIN,
-    MAPTILER_API_KEY: 'avboMAhwkXpDoiOqq2oD',
-    MAPTILER_STYLE_URL: 'https://api.maptiler.com/maps/streets-v2/style.json?key=avboMAhwkXpDoiOqq2oD',
-  },
-};
+type AppEnvironment = 'development' | 'production';
 
-type EnvKey = keyof typeof ENV;
+const appEnvironment: AppEnvironment =
+  process.env.EXPO_PUBLIC_APP_ENV === 'production' ||
+  process.env.APP_ENV === 'production'
+    ? 'production'
+    : 'development';
 
-const getEnv = (): typeof ENV.development => {
-  const releaseChannel = (Constants.expoConfig?.extra?.releaseChannel as string) ?? 'development';
-  const key: EnvKey = (releaseChannel as EnvKey) in ENV ? (releaseChannel as EnvKey) : 'development';
-  return ENV[key];
-};
+const configuredApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+const configuredSocketUrl = process.env.EXPO_PUBLIC_SOCKET_URL?.trim();
+const metroHost = Constants.expoConfig?.hostUri?.split(':')[0];
+const devServerOrigin =
+  appEnvironment === 'development'
+    ? Platform.OS === 'android' && !Constants.isDevice
+      ? 'http://10.0.2.2:5001'
+      : metroHost
+        ? `http://${metroHost}:5001`
+        : undefined
+    : undefined;
+const apiBaseUrl = devServerOrigin
+  ? `${devServerOrigin}/api`
+  : configuredApiBaseUrl;
+const socketUrl = devServerOrigin ?? configuredSocketUrl;
+const maptilerKey =
+  process.env.EXPO_PUBLIC_MAPTILER_KEY?.trim() ||
+  (Constants.expoConfig?.extra as { maptilerApiKey?: string } | undefined)
+    ?.maptilerApiKey?.trim() ||
+  '';
 
-export const env = getEnv();
+if (!apiBaseUrl) {
+  throw new Error(
+    `EXPO_PUBLIC_API_BASE_URL is required for ${appEnvironment} builds`,
+  );
+}
+
+if (!socketUrl) {
+  throw new Error(
+    `EXPO_PUBLIC_SOCKET_URL is required for ${appEnvironment} builds`,
+  );
+}
+
+if (!maptilerKey) {
+  throw new Error(
+    `EXPO_PUBLIC_MAPTILER_KEY is required for ${appEnvironment} builds`,
+  );
+}
+
+const mapStyleUrl =
+  process.env.EXPO_PUBLIC_MAPTILER_STYLE_URL?.trim() ||
+  `https://api.maptiler.com/maps/basic-v2/style.json?key=${encodeURIComponent(maptilerKey)}`;
+
+export const env = {
+  API_BASE_URL: apiBaseUrl,
+  SOCKET_URL: socketUrl,
+  MAPTILER_API_KEY: maptilerKey,
+  MAPTILER_STYLE_URL: mapStyleUrl,
+} as const;
+
 export default env;
