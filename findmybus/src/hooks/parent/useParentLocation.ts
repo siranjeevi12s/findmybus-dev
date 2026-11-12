@@ -1,44 +1,60 @@
 import { useState, useEffect } from 'react';
 import * as Location from 'expo-location';
 
+export type LocationPermissionStatus = 'unknown' | 'granted' | 'denied';
+
 export function useParentLocation() {
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [permissionStatus, setPermissionStatus] = useState<'granted' | 'denied' | 'undetermined' | null>(null);
+  const [permissionStatus, setPermissionStatus] = useState<LocationPermissionStatus>('unknown');
 
   useEffect(() => {
     let subscription: Location.LocationSubscription | null = null;
-
+    let cancelled = false;
     (async () => {
       try {
-        // Check current status without prompting
-        const { status: fgStatus } = await Location.getForegroundPermissionsAsync();
-        setPermissionStatus(fgStatus);
-
-        if (fgStatus !== 'granted') {
-          // Only request if not already determined
-          const { status: requested } = await Location.requestForegroundPermissionsAsync();
-          setPermissionStatus(requested);
-          if (requested !== 'granted') return;
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setPermissionStatus(status === 'denied' ? 'denied' : 'unknown');
+          if (cancelled) return;
+          // Still try to watch — may get cached location
+        } else {
+          setPermissionStatus('granted');
         }
 
-        const loc = await Location.getLastKnownPositionAsync({ maxAge: 2 * 60 * 1000 })
-          ?? await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        setLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
-
-        subscription = await Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.Balanced, distanceInterval: 10 },
-          (newLoc) => {
-            setLocation({ latitude: newLoc.coords.latitude, longitude: newLoc.coords.longitude });
+        // Emulator fused provider can briefly report "location unavailable"
+        // (uncaught -> dev red error badge), so retry instead of throwing.
+        // Emulator fused/network provider is often unavailable — High uses
+        // GPS (works with `adb emu geo fix`), Balanced needs network.
+        for (let attempt = 0; attempt < 5 && !cancelled; attempt++) {
+          try {
+            const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
+            if (!cancelled) setLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+            break;
+          } catch (e) {
+            if (attempt === 4) console.warn('[Parent] current location unavailable, watching for updates instead');
+            else await new Promise((r) => setTimeout(r, 2000));
           }
-        );
+        }
+
+        if (!cancelled) {
+          try {
+            subscription = await Location.watchPositionAsync(
+              { accuracy: Location.Accuracy.Highest, distanceInterval: 5 },
+              (newLoc) => {
+                setLocation({ latitude: newLoc.coords.latitude, longitude: newLoc.coords.longitude });
+              }
+            );
+          } catch (e) {
+            console.warn('[Parent] watchPosition failed:', e instanceof Error ? e.message : e);
+          }
+        }
       } catch (e) {
-        // Emulator / provider failures must not surface as unhandled rejections;
-        // the map simply renders without the parent marker in that case.
-        console.warn('[useParentLocation] Location unavailable:', (e as Error)?.message ?? e);
+        console.warn('[Parent] location setup failed:', e instanceof Error ? e.message : e);
       }
     })();
 
     return () => {
+      cancelled = true;
       if (subscription) subscription.remove();
     };
   }, []);

@@ -1,10 +1,7 @@
-import { create as axiosCreate, AxiosError, InternalAxiosRequestConfig } from 'axios';
+import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import * as SecureStore from 'expo-secure-store';
-// eslint-disable-next-line import/no-named-as-default
 import env from '../env';
-import { useAuthStore } from '../store/authStore';
-import { disconnectSocket, setSocketToken } from '../services/socketService';
-import { useTripStore } from './../store/tripStore';
+import { refreshMobileAccessToken } from '../services/mobileTokenRefresh';
 
 const SECURE_KEYS = {
   ACCESS_TOKEN: 'findmybus_access_token',
@@ -20,14 +17,10 @@ export const clearTokens = async () => {
   await SecureStore.deleteItemAsync(SECURE_KEYS.REFRESH_TOKEN);
 };
 
-// Shorter timeout for location updates, standard for everything else
-const LOCATION_TIMEOUT = 5000;
-const DEFAULT_TIMEOUT = 15000;
-
-const axiosClient = axiosCreate({
+const axiosClient = axios.create({
   baseURL: env.API_BASE_URL,
   headers: { 'Content-Type': 'application/json' },
-  timeout: DEFAULT_TIMEOUT,
+  timeout: 15000,
 });
 
 // Attach access token to every request
@@ -37,10 +30,6 @@ axiosClient.interceptors.request.use(
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-    // Shorter timeout for location update endpoints
-    if (config.url?.includes('/location')) {
-      config.timeout = LOCATION_TIMEOUT;
-    }
     return config;
   },
   (error) => Promise.reject(error)
@@ -48,27 +37,11 @@ axiosClient.interceptors.request.use(
 
 // Token refresh on 401
 let isRefreshing = false;
-let failedQueue: { resolve: (v: unknown) => void; reject: (r: unknown) => void }[] = [];
+let failedQueue: Array<{ resolve: (v: unknown) => void; reject: (r: unknown) => void }> = [];
 
 const processQueue = (error: Error | null, token: string | null = null) => {
   failedQueue.forEach((p) => (error ? p.reject(error) : p.resolve(token)));
   failedQueue = [];
-};
-
-const invalidateSession = async () => {
-  isRefreshing = false;
-  failedQueue = [];
-  try {
-    await useAuthStore.getState().invalidateSession();
-  } catch (e) {
-    console.error('[AxiosClient] Failed to invalidate session:', e);
-  }
-  try {
-    disconnectSocket();
-  } catch (e) {
-    console.error('[AxiosClient] Failed to disconnect socket:', e);
-  }
-  useTripStore.getState().reset();
 };
 
 axiosClient.interceptors.response.use(
@@ -92,29 +65,41 @@ axiosClient.interceptors.response.use(
 
       const refreshToken = await getRefreshToken();
       if (!refreshToken) {
-        await invalidateSession();
+        processQueue(error as Error, null);
+        isRefreshing = false;
+        await clearTokens();
+        try {
+          const { useAuthStore } = await import('../store/authStore');
+          await useAuthStore.getState().logout();
+        } catch {}
+        // Event should be emitted to auth store if needed
         return Promise.reject(error);
       }
 
       try {
-        const res = await axiosClient.post(`${env.API_BASE_URL}/mobile/auth/refresh-token`, {
-          token: refreshToken,
-        });
-        const newAccessToken = res.data.data.accessToken;
+        const newAccessToken = await refreshMobileAccessToken();
         await setAccessToken(newAccessToken);
-        // Also refresh the socket token so live tracking keeps working
+        // Keep Zustand in sync - otherwise socketService.ts:30 keeps using stale 15m token until restart
         try {
-          setSocketToken(newAccessToken);
-        } catch (e) {
-          console.error('[AxiosClient] Failed to refresh socket token:', e);
-        }
+          const { useAuthStore } = await import('../store/authStore');
+          useAuthStore.setState({ accessToken: newAccessToken });
+          // Also update any live socket auth
+          const { getSocket } = await import('../services/socketService');
+          const s = getSocket();
+          if (s) s.auth = { token: newAccessToken };
+        } catch {}
         original.headers.Authorization = `Bearer ${newAccessToken}`;
         processQueue(null, newAccessToken);
         isRefreshing = false;
         return axiosClient(original);
       } catch (refreshError) {
-        console.error('[AxiosClient] Token refresh failed:', refreshError);
-        await invalidateSession();
+        processQueue(refreshError as Error, null);
+        isRefreshing = false;
+        await clearTokens();
+        try {
+          const { useAuthStore } = await import('../store/authStore');
+          await useAuthStore.getState().logout();
+        } catch {}
         return Promise.reject(refreshError);
       }
     }
@@ -123,27 +108,3 @@ axiosClient.interceptors.response.use(
 );
 
 export default axiosClient;
-
-/**
- * Refresh the access token using the stored refresh token and hand the new
- * token to the socket layer. Used by socketService when the server rejects a
- * handshake with an expired access token (no HTTP request needed to trigger
- * the normal 401 interceptor path).
- */
-export async function refreshSocketToken(): Promise<void> {
-  const refreshToken = await getRefreshToken();
-  if (!refreshToken) {
-    await invalidateSession();
-    throw new Error('No refresh token available');
-  }
-  const res = await axiosClient.post(`${env.API_BASE_URL}/mobile/auth/refresh-token`, {
-    token: refreshToken,
-  });
-  const newAccessToken = res.data?.data?.accessToken;
-  if (!newAccessToken) {
-    await invalidateSession();
-    throw new Error('Refresh response missing accessToken');
-  }
-  await setAccessToken(newAccessToken);
-  setSocketToken(newAccessToken);
-}

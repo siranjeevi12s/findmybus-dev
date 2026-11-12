@@ -9,8 +9,8 @@ export interface VerifyOtpResponse extends AuthTokens {
 }
 
 export const authApi = {
-  sendOtp: (email: string) =>
-    axiosClient.post<ApiResponse<SendOtpResponse>>('/mobile/auth/send-otp', { email }),
+  sendOtp: (email: string, role?: string) =>
+    axiosClient.post<ApiResponse<SendOtpResponse>>('/mobile/auth/send-otp', { email, role }),
 
   verifyOtp: (email: string, otp: string) =>
     axiosClient.post<ApiResponse<VerifyOtpResponse>>('/mobile/auth/verify-otp', { email, otp }),

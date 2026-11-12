@@ -14,6 +14,7 @@ export default function ParentLayout() {
   return (
     <Stack
       screenOptions={{
+        headerShown: false,
         headerStyle: { backgroundColor: '#3B82F6' },
         headerTintColor: '#fff',
         headerTitleStyle: { fontWeight: 'bold' },

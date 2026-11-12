@@ -1,20 +1,20 @@
 const errorHandler = (err, req, res, next) => {
   const statusCode = err.statusCode || 500;
+  const message = err.message || 'Internal Server Error';
 
-  // Log full detail server-side, but never expose internal error text (DB
-  // driver messages, stack-derived info) to clients on 5xx responses.
+  // Log error stack for debugging in development environment
   if (process.env.NODE_ENV !== 'production') {
     console.error(err);
   } else {
-    console.error(`[Error] ${statusCode} - ${err.message}`);
+    console.error(`[Error] ${statusCode} - ${message}`);
   }
-
-  const message =
-    statusCode >= 500 ? 'Internal Server Error' : err.message || 'Request failed';
 
   res.status(statusCode).json({
     success: false,
-    message,
+    message: process.env.NODE_ENV === 'production' && statusCode >= 500
+      ? 'Something went wrong'
+      : message,
+    code: err.code || null,
   });
 };
 

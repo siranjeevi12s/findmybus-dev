@@ -27,7 +27,7 @@ export default function RootLayout() {
     const inAuthGroup = segments[0] === '(auth)';
 
     if (!isAuthenticated && !inAuthGroup) {
-      router.replace('/(auth)/login');
+      router.replace('/(auth)/select-role');
     } else if (isAuthenticated && inAuthGroup) {
       if (role === 'driver') {
         router.replace('/(driver)');

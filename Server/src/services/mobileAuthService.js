@@ -6,11 +6,6 @@ const Driver = require('../models/Driver');
 const Student = require('../models/Student');
 const { generateMobileAccessToken, generateMobileRefreshToken, verifyMobileRefreshToken } = require('../utils/mobileJwt');
 
-// Store session refresh tokens as a SHA-256 hash so a DB read does not expose
-// usable bearer tokens. The raw JWT is returned to the client only once.
-const hashToken = (token) =>
-  crypto.createHash('sha256').update(String(token)).digest('hex');
-
 // Note: Ensure your emailService exports sendOtpEmail
 // If it doesn't exist yet, we will mock it or you can replace it.
 // Assuming we have some email service, but for now we'll just log it if not available.
@@ -27,15 +22,6 @@ try {
 
 const sendOtp = async (email) => {
   const normalizedEmail = email.toLowerCase().trim();
-
-  // Per-email throttle: bind the resend cooldown to the target address so it
-  // cannot be bypassed by rotating source IPs (the IP limiter is coarse).
-  const existingOtp = await MobileOtp.findOne({ email: normalizedEmail });
-  if (existingOtp && existingOtp.resendTimeLimit > new Date()) {
-    const error = new Error('Please wait before requesting another OTP');
-    error.statusCode = 429;
-    throw error;
-  }
 
   // 1. Determine user role and ID
   let role = null;
@@ -92,25 +78,22 @@ const sendOtp = async (email) => {
 const verifyOtp = async (email, otp) => {
   const normalizedEmail = email.toLowerCase().trim();
 
-  // Atomically increment attempts only while under the cap so concurrent
-  // requests cannot race past the 5-attempt limit.
-  const otpRecord = await MobileOtp.findOneAndUpdate(
-    { email: normalizedEmail, attempts: { $lt: 5 } },
-    { $inc: { attempts: 1 } },
-    { new: true }
-  );
+  const otpRecord = await MobileOtp.findOne({ email: normalizedEmail });
   if (!otpRecord) {
-    const existing = await MobileOtp.findOne({ email: normalizedEmail });
-    if (existing && existing.attempts >= 5) {
-      await MobileOtp.deleteOne({ _id: existing._id });
-      const error = new Error('Too many failed attempts. Please request a new OTP.');
-      error.statusCode = 400;
-      throw error;
-    }
     const error = new Error('OTP not found or expired');
     error.statusCode = 400;
     throw error;
   }
+
+  if (otpRecord.attempts >= 5) {
+    await MobileOtp.deleteOne({ _id: otpRecord._id });
+    const error = new Error('Too many failed attempts. Please request a new OTP.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  otpRecord.attempts += 1;
+  await otpRecord.save();
 
   const isValid = await bcrypt.compare(otp, otpRecord.otpHash);
   if (!isValid) {
@@ -152,7 +135,7 @@ const verifyOtp = async (email, otp) => {
   await MobileSession.create({
     userId,
     role,
-    token: hashToken(refreshToken),
+    token: refreshToken,
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
   });
 
@@ -196,28 +179,34 @@ const resendOtp = async (email) => {
 
 const refreshMobileToken = async (token) => {
   if (!token) {
-      const err = new Error('Refresh token is required');
-      err.statusCode = 400;
-      throw err;
+    const err = new Error('Refresh token is invalid or expired. Please log in again.');
+    err.statusCode = 401;
+    err.code = 'INVALID_REFRESH_TOKEN';
+    throw err;
   }
   const decoded = verifyMobileRefreshToken(token);
   if (!decoded) {
-    const err = new Error('Invalid or expired refresh token');
+    const err = new Error('Refresh token is invalid or expired. Please log in again.');
     err.statusCode = 401;
+    err.code = 'INVALID_REFRESH_TOKEN';
     throw err;
   }
 
-  const session = await MobileSession.findOne({ token: hashToken(token) });
+  const session = await MobileSession.findOne({
+    token,
+    expiresAt: { $gt: new Date() },
+  });
   if (!session) {
-    const err = new Error('Session expired or logged out');
+    const err = new Error('Refresh token is invalid or expired. Please log in again.');
     err.statusCode = 401;
+    err.code = 'INVALID_REFRESH_TOKEN';
     throw err;
   }
-  // Defense-in-depth: honour the session expiry even if the JWT is still valid.
-  if (session.expiresAt && session.expiresAt.getTime() <= Date.now()) {
-    await MobileSession.deleteOne({ _id: session._id });
-    const err = new Error('Session expired or logged out');
+
+  if (session.userId.toString() !== decoded.userId || session.role !== decoded.role) {
+    const err = new Error('Refresh token is invalid or expired. Please log in again.');
     err.statusCode = 401;
+    err.code = 'INVALID_REFRESH_TOKEN';
     throw err;
   }
 
@@ -227,7 +216,7 @@ const refreshMobileToken = async (token) => {
 
 const logoutMobile = async (token) => {
   if (token) {
-      await MobileSession.deleteOne({ token: hashToken(token) });
+      await MobileSession.deleteOne({ token });
   }
   return { message: 'Logged out successfully' };
 };

@@ -3,15 +3,16 @@ import { parentApi } from '../../api/parentApi';
 import { useAuthStore } from '../../store/authStore';
 
 export function useParentProfile() {
-  const accessToken = useAuthStore((state) => state.accessToken);
+  const userId = useAuthStore((state) => state.userId);
+
   return useQuery({
-    queryKey: ['parentProfile'],
+    queryKey: ['parentProfile', userId],
     queryFn: async () => {
       const { data } = await parentApi.getProfile();
       if (!data.success) throw new Error(data.message);
       return data.data;
     },
-    enabled: !!accessToken,
+    enabled: !!userId,
     staleTime: 5 * 60 * 1000,
   });
 }

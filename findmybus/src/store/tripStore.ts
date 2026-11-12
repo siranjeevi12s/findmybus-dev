@@ -36,15 +36,15 @@ export const useTripStore = create<TripState>((set) => ({
   setBusPath: (path) => set({ busPath: path }),
   addBusPathPoint: (point) =>
     set((state) => {
-      // Filter duplicates: skip if same as last point
-      const last = state.busPath[state.busPath.length - 1];
+      const deduped = [...state.busPath];
+      const last = deduped[deduped.length - 1];
       if (last && last.latitude === point.latitude && last.longitude === point.longitude) {
-        return state;
+        return { busPath: deduped };
       }
-      const updated = [...state.busPath, point];
+      deduped.push(point);
       // Cap at 500 points to prevent memory growth
-      if (updated.length > 500) updated.shift();
-      return { busPath: updated };
+      if (deduped.length > 500) deduped.shift();
+      return { busPath: deduped };
     }),
   clearBusPath: () => set({ busPath: [] }),
   setSocketConnected: (connected) => set({ isConnectedToSocket: connected }),
