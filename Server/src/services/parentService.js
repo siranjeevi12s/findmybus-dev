@@ -1,6 +1,7 @@
 const Student = require('../models/Student');
 const BusDriverAssignment = require('../models/BusDriverAssignment');
 const Trip = require('../models/Trip');
+const TripLocation = require('../models/TripLocation');
 
 const getParentProfile = async (studentId) => {
   const student = await Student.findById(studentId).populate('schoolId').populate('busId');

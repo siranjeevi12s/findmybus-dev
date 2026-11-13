@@ -1,8 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
-import { tripApi } from '../api/tripApi';
-import { enqueueLocation, dequeueAll } from './locationQueue';
+import { driverApi } from '../api/driverApi';
+import { enqueueLocation, dequeueAndClear } from './locationQueue';
 import { isAccurateLocation, shouldUpdateLocation } from '../utils/locationFilter';
 
 export const BACKGROUND_LOCATION_TASK = 'FINDMYBUS_BACKGROUND_LOCATION';
@@ -72,12 +72,12 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: TaskMan
     const payload = { latitude, longitude, accuracy: accuracy ?? undefined, speed: speed ?? undefined, heading: heading ?? undefined };
 
     try {
-      await tripApi.updateLocation(activeTripId, payload);
+      await driverApi.updateLocation(activeTripId, payload);
       // Drain queue if there are pending items
-      const queued = await dequeueAll();
+      const queued = await dequeueAndClear();
       for (const item of queued) {
         try {
-          await tripApi.updateLocation(item.tripId, { latitude: item.latitude, longitude: item.longitude, accuracy: item.accuracy, speed: item.speed, heading: item.heading });
+          await driverApi.updateLocation(item.tripId, { latitude: item.latitude, longitude: item.longitude, accuracy: item.accuracy, speed: item.speed, heading: item.heading, timestamp: item.timestamp });
         } catch {}
       }
     } catch {

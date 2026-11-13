@@ -109,6 +109,23 @@ const getBusLocation = async (req, res, next) => {
   }
 };
 
+const getBusLocationHistory = async (req, res, next) => {
+  try {
+    const { userId } = req.mobileUser;
+    const profile = await getCachedParentProfile(userId);
+    const busId = profile.bus ? profile.bus._id : null;
+    const history = await parentService.getBusLocationHistory(busId);
+    return res.status(200).json({
+      success: true,
+      message: 'Bus location history fetched',
+      data: history,
+      error: null,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Breadcrumb trail of the parent's own bus's active trip. The busId is
 // resolved from the authenticated token, so one parent can never read
 // another trip's route.
@@ -136,5 +153,6 @@ module.exports = {
   getBus,
   getActiveTrip,
   getBusLocation,
+  getBusLocationHistory,
   getTripPath,
 };
